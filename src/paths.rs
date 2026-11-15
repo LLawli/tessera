@@ -221,17 +221,30 @@ pub fn host_data_home() -> PathBuf {
     host_xdg("XDG_DATA_HOME", ".local/share")
 }
 
-/// Is this Flatpak app installed, for the user or for the system? Its folder
-/// in ~/.var/app counts too (it is there once the app has run). In Tessera's
+/// Is this Flatpak app installed, for the user or for the system? Only a
+/// deployed app counts: `<installation>/app/<id>/current/active`, the commit
+/// in use of its current branch. Its data folder in ~/.var/app says nothing:
+/// `flatpak uninstall` leaves it behind (unless --delete-data), and a native
+/// app could not be set up because of a Flatpak long gone. In Tessera's
 /// sandbox the install folders are visible read-only (see the manifest).
 pub fn flatpak_installed(id: &str) -> bool {
     [
         host_data_home().join("flatpak/app"),
         PathBuf::from("/var/lib/flatpak/app"),
-        home().join(".var/app"),
     ]
     .iter()
-    .any(|d| d.join(id).is_dir())
+    .any(|d| d.join(id).join("current/active").is_dir())
+}
+
+/// For tests: the user installation's deployment of `id`, as flatpak lays it
+/// out (`current` and `active` are links).
+#[cfg(test)]
+pub fn fake_flatpak_install(id: &str) {
+    let app = host_data_home().join("flatpak/app").join(id);
+    let commit = app.join("x86_64/stable/0123abcd");
+    std::fs::create_dir_all(&commit).unwrap();
+    let _ = std::os::unix::fs::symlink("0123abcd", app.join("x86_64/stable/active"));
+    let _ = std::os::unix::fs::symlink("x86_64/stable", app.join("current"));
 }
 
 /// The host's p11-kit server socket, as `--filesystem=xdg-run/p11-kit/pkcs11`

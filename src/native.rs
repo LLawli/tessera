@@ -685,8 +685,11 @@ mod tests {
         assert!(matches!(state(&CHROMIUM_BROWSERS), State::ToDo));
         // The older ~/.pki/nssdb wins, and the Chromium Flatpak reads it too.
         fs::create_dir_all(home.join(".pki/nssdb")).unwrap();
+        // Its data folder alone (left by `flatpak uninstall`) is no Flatpak.
         fs::create_dir_all(home.join(".var/app/org.chromium.Chromium")).unwrap();
         assert_eq!(chromium_nssdb(), Some(home.join(".pki/nssdb")));
+        assert!(matches!(state(&CHROMIUM_BROWSERS), State::ToDo));
+        paths::fake_flatpak_install("org.chromium.Chromium");
         assert!(matches!(
             state(&CHROMIUM_BROWSERS),
             State::SharedWithFlatpak
@@ -823,6 +826,8 @@ mod tests {
         assert!(apps::shown(&apps::THUNDERBIRD));
         assert!(!apps::shown(&apps::THUNDERBIRD_ESR));
         fs::create_dir_all(home.join(".var/app/org.mozilla.thunderbird_esr")).unwrap();
+        assert!(!apps::shown(&apps::THUNDERBIRD_ESR), "data left behind");
+        paths::fake_flatpak_install("org.mozilla.thunderbird_esr");
         assert!(apps::shown(&apps::THUNDERBIRD_ESR));
         assert!(!apps::shown(&apps::THUNDERBIRD_OLD));
         // Evolution's Flatpak reads the real ~/.pki/nssdb, like Chromium's.
