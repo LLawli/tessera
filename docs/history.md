@@ -103,6 +103,6 @@ The README and the documentation follow the window's pages, with a new screensho
 
 60. **What to do with a copied command.** The copy buttons' notice said "Command copied" and repeated the command; it now says how to run it: open the Terminal, paste with Ctrl+Shift+V (Ctrl+V does not paste there) and press Enter. The button for the module's path, for the apps set up by hand, says "Path copied" and to paste it in the app's settings: it is not a command. Switches or a button that opens the terminal were weighed and left out: changing other apps' permissions, starting the system's services or typing in a terminal would each take a permission to act outside Tessera's sandbox, and the copied command keeps every change outside it visible and in the user's hands.
 
-## After 0.4.3
+## 0.4.4 (November 15)
 
 61. **A Flatpak uninstalled still counted.** Setting up the native Chromium-based browsers was refused ("the Chromium or Evolution Flatpak uses the same certificate database (~/.pki/nssdb) and would see each token twice") on a system where the Evolution Flatpak had been removed. Tessera took an app's data folder in `~/.var/app` as proof that it was installed, and `flatpak uninstall` leaves that folder behind (unless `--delete-data`). Now only a deployed app counts: `app/<id>/current/active` in the user's or the system's installation. The same check decides which Flatpak browsers get a web signer row and whether the Thunderbird ESR rows show.

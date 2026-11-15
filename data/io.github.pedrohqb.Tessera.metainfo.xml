@@ -51,6 +51,14 @@
     <display_length compare="ge">360</display_length>
   </requires>
   <releases>
+    <release version="0.4.4" date="2026-11-15">
+      <description>
+        <p>A Flatpak that was uninstalled no longer gets in the way.</p>
+        <ul>
+          <li>The native Chromium-based browsers can be set up again after the Chromium or Evolution Flatpak is removed: the data folder an uninstalled Flatpak leaves behind no longer counts as the app installed.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.3" date="2026-11-13">
       <description>
         <p>Clearer instructions when copying a command.</p>
