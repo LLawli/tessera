@@ -65,7 +65,7 @@ A driver that talks to its token over USB itself, not through pcscd, also says `
 
 ### Icons
 
-The extensions' icons, shown in FlatPark's catalog, come from the vendors where they publish one: SafeSign's is Token Administration's own (256 px, from its package), SerproID's is the official one from Serpro's [integration manual](https://neoid.estaleiro.serpro.gov.br/documentacao/suporte/icones-logomarcas-integracao/). SafeNet's Linux package only has a 32 px badge, so its extension has an icon of its own, a generic USB token in Tessera's colors, without the vendor's mark.
+The extensions' icons, shown in FlatPark's catalog, come from the vendors where they publish one: SafeSign's is Token Administration's own (256 px, from its package), SerproID's is the official one from Serpro's [integration manual](https://neoid.estaleiro.serpro.gov.br/documentacao/suporte/icones-logomarcas-integracao/). SafeNet's Linux package only has a 32 px badge, so its extension has an icon of its own, a generic USB token in Tessera's colors, without the vendor's mark. Feitian's Linux package has no image at all, so the ePass2003's has one of its own too: a slim token with a swivel cover, in Tessera's colors turned around (gold body, bronze trim), so it does not look like SafeNet's.
 
 ## SafeSign IC (GD Burti)
 
