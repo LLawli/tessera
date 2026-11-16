@@ -28,6 +28,7 @@ mod remote;
 mod serial;
 mod server;
 mod settings;
+mod setup;
 mod signers;
 mod stable;
 mod status;

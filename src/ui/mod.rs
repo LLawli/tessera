@@ -57,6 +57,9 @@ struct Hub {
     /// The protocol version of the system's p11-kit server, read when it
     /// was last seen serving Tessera's tokens (native.rs, host_has_old_p11kit).
     pub(super) host_protocol: Cell<Option<u8>>,
+    /// The readers pcscd listed at the last check of the drivers that need
+    /// a one-time setup (setup.rs; supervise.rs, gate).
+    readers_now: RefCell<Vec<String>>,
     /// The open window, if any (dropped when the window is destroyed).
     win: RefCell<Option<Rc<Win>>>,
     tray: RefCell<Option<tray::Tray>>,
@@ -306,6 +309,7 @@ pub fn run() -> ExitCode {
                 host_busy: Cell::new(false),
                 host_misses: Cell::new(0),
                 host_protocol: Cell::new(None),
+                readers_now: RefCell::new(vec![]),
                 win: RefCell::new(None),
                 tray: RefCell::new(None),
                 tray_events: tx,

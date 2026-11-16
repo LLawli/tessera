@@ -204,6 +204,18 @@ def make_home(home):
     (fff / "profiles.ini").write_text("[Profile0]\nPath=flat.default-release\nIsRelative=1\n")
 
 
+def make_usb_driver(drivers):
+    # A driver like the ePass2003's, which talks to the token over USB
+    # itself: Tessera holds it back while pcscd lists its reader.
+    d = drivers / "UsbDemo"
+    d.mkdir(parents=True)
+    trust = "/usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so"
+    (d / "driver.toml").write_text(
+        f'name = "USB demo"\nmodule = "{trust}"\nusb = true\n'
+        'pcscd_ignore = "Feitian ePass2003"\n'
+    )
+
+
 def expected_pjeoffice_library():
     text = Path("/etc/os-release").read_text()
     ids = []
@@ -252,6 +264,8 @@ def main():
         XDG_RUNTIME_DIR=str(run),
         TESSERA_DRIVERS_PATH=str(tmp / "drivers"),
         TESSERA_HOST_MODULES=str(tmp / "modules"),
+        # A reader the fake USB driver below wants pcscd to leave alone.
+        TESSERA_TEST_READERS="Feitian ePass2003 00 00",
         LANG="C.UTF-8",
         LC_ALL="C.UTF-8",
         GDK_BACKEND="x11",
@@ -259,6 +273,7 @@ def main():
         GTK_A11Y="atspi",
     )
     env.pop("NO_AT_BRIDGE", None)
+    make_usb_driver(tmp / "drivers")
     log = open(tmp / "tessera.log", "w")
     proc = subprocess.Popen([str(TESSERA)], env=env, stdout=log, stderr=subprocess.STDOUT)
     try:
@@ -283,6 +298,22 @@ def main():
             if find(app, role="label", name=OLD_P11KIT_BANNER):
                 fail("old p11-kit banner shown on a host that does not need it")
             ok("no old p11-kit banner on this host")
+
+        # --- Drivers page: a driver held back for its one-time setup ------
+        open_page(app, "Drivers")
+        wait(
+            "the USB demo driver waiting for its setup",
+            lambda: subtitle(find(app, role="list item", name="USB demo") or app).endswith(
+                "Waiting for the one-time setup below"
+            ),
+        )
+        wait(
+            "the card service setup row",
+            lambda: find(app, role="list item", name="USB demo · One-time setup: the card service"),
+        )
+        if find(app, role="list item", name="USB demo · One-time setup: USB"):
+            fail("USB setup row shown with the USB devices in reach")
+        ok("USB demo driver: held back, card service setup shown")
 
         # --- Apps page, Native tab ----------------------------------------
         open_page(app, "Apps")

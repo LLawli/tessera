@@ -61,6 +61,9 @@ pub(super) struct Win {
     pub(super) drivers: Section,
     /// (driver id, its row, the row's own subtitle) for update_drivers.
     pub(super) driver_rows: RefCell<Vec<(String, adw::ActionRow, String)>>,
+    /// (driver id, what it needs, the row with the command) for the drivers
+    /// that need a one-time setup (setup.rs); shown while it is not done.
+    pub(super) setup_rows: RefCell<Vec<(String, crate::setup::Need, adw::ActionRow)>>,
     pub(super) app_rows: RefCell<Vec<AppRows>>,
     pub(super) native_rows: RefCell<Vec<NativeRows>>,
     pub(super) signer_rows: RefCell<Vec<BrowserRows>>,
@@ -535,6 +538,18 @@ pub(super) fn refresh(hub: &Rc<Hub>, win: &Rc<Win>) {
 /// Each driver row says whether apps can use it, and why not.
 pub(super) fn update_drivers(hub: &Hub, win: &Win) {
     let disabled = hub.settings.borrow().disabled_drivers.clone();
+    {
+        let ds = hub.drivers.borrow();
+        let readers = hub.readers_now.borrow();
+        for (id, need, row) in win.setup_rows.borrow().iter() {
+            let unmet = ds
+                .iter()
+                .find(|d| &d.id == id)
+                .map(|d| crate::setup::unmet(d, &readers))
+                .unwrap_or_default();
+            row.set_visible(!disabled.contains(id) && unmet.contains(need));
+        }
+    }
     let running = hub.server.borrow().running();
     for (id, row, base) in win.driver_rows.borrow().iter() {
         let strikes = hub.health.borrow().strikes(id);
@@ -582,10 +597,54 @@ pub(super) fn update_drivers(hub: &Hub, win: &Win) {
     }
 }
 
+/// The rows with the one-time setup a driver needs (setup.rs), each with
+/// its command to copy. update_drivers shows those not done yet.
+fn setup_rows(win: &Rc<Win>, d: &drivers::Driver) -> Vec<(crate::setup::Need, adw::ActionRow)> {
+    use crate::setup::{self, Need};
+    let mut out = vec![];
+    if d.usb {
+        let row = plain_row(
+            &format!("{} · {}", d.name, t("One-time setup: USB")),
+            t("This driver talks to the token over USB itself: let Tessera reach the USB devices (copy the command, run it in a terminal), then restart Tessera (menu). Only this driver needs it."),
+            "dialog-warning-symbolic",
+        );
+        row.add_suffix(&copy_button_with(
+            win,
+            setup::usb_command(),
+            t("Copy the command that lets Tessera reach the USB devices"),
+        ));
+        row.set_visible(false);
+        out.push((Need::Usb, row));
+    }
+    if let Some(reader) = &d.pcscd_ignore {
+        let row = plain_row(
+            &format!("{} · {}", d.name, t("One-time setup: the card service")),
+            t("The system's card service (pcscd) must leave this token to the driver, or both talk to it at once and it stops answering. Copy the command and run it in a terminal (it asks for your password); the driver starts by itself afterwards."),
+            "dialog-warning-symbolic",
+        );
+        row.set_tooltip_text(Some(&format!(
+            "{}\n{}\n\n{}\n{}",
+            t("Command"),
+            setup::pcscd_ignore_command(reader),
+            t("To undo it"),
+            setup::pcscd_undo_command(reader)
+        )));
+        row.add_suffix(&copy_button_with(
+            win,
+            setup::pcscd_ignore_command(reader),
+            t("Copy the command that makes the card service leave this token alone"),
+        ));
+        row.set_visible(false);
+        out.push((Need::PcscdIgnore(reader.clone()), row));
+    }
+    out
+}
+
 pub(super) fn fill_drivers(hub: &Rc<Hub>, win: &Rc<Win>) {
     win.drivers.clear();
     win.available.clear();
     win.driver_rows.borrow_mut().clear();
+    win.setup_rows.borrow_mut().clear();
     let ds = hub.drivers.borrow();
     for d in ds.iter() {
         let mut subtitle = String::new();
@@ -677,6 +736,12 @@ pub(super) fn fill_drivers(hub: &Rc<Hub>, win: &Rc<Win>) {
             win.driver_rows
                 .borrow_mut()
                 .push((d.id.clone(), row.clone(), subtitle.clone()));
+            for (need, setup) in setup_rows(win, d) {
+                win.drivers.add(&setup);
+                win.setup_rows
+                    .borrow_mut()
+                    .push((d.id.clone(), need, setup));
+            }
         }
     }
     // The vendors' drivers not installed: what each is for, and the command
@@ -953,6 +1018,7 @@ pub(super) fn build_window(app: &adw::Application, hub: &Rc<Hub>) -> Rc<Win> {
         tokens: Section::new(t("Tokens"), None),
         drivers: Section::new(t("Installed"), None),
         driver_rows: RefCell::new(vec![]),
+        setup_rows: RefCell::new(vec![]),
         app_rows: RefCell::new(vec![]),
         native_rows: RefCell::new(vec![]),
         signer_rows: RefCell::new(vec![]),

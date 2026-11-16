@@ -469,6 +469,8 @@ mod tests {
             library_path: vec![],
             env: Default::default(),
             when_on: Default::default(),
+            usb: false,
+            pcscd_ignore: None,
         };
         let with = host_module_contents(&d, true);
         assert!(with.contains("remote: unix:path="));

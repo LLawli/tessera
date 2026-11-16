@@ -22,10 +22,23 @@ pub(super) fn supervise(hub: &Rc<Hub>) {
     if hub.busy.replace(true) {
         return;
     }
-    let generation = hub.generation.get();
-    let running = hub.running();
     let hub = hub.clone();
     glib::spawn_future_local(async move {
+        // Drivers that need a one-time setup are held back, before the
+        // listing would load them, while it is not done (setup.rs).
+        let needs_setup = hub
+            .drivers
+            .borrow()
+            .iter()
+            .any(|d| d.usb || d.pcscd_ignore.is_some());
+        if needs_setup {
+            if let Ok(names) = gio::spawn_blocking(status::reader_names).await {
+                gate(&hub, &names);
+                *hub.readers_now.borrow_mut() = names;
+            }
+        }
+        let generation = hub.generation.get();
+        let running = hub.running();
         let snap = gio::spawn_blocking(move || status::snapshot(&running)).await;
         hub.busy.set(false);
         let Ok(snap) = snap else { return };
@@ -67,6 +80,41 @@ pub(super) fn supervise(hub: &Rc<Hub>) {
             apply_snapshot(&win, snap, &installed);
         }
     });
+}
+
+/// Why a driver waiting for its one-time setup is not served.
+pub(super) fn setup_reason() -> String {
+    crate::i18n::t("Waiting for the one-time setup below").to_string()
+}
+
+/// Hold back the drivers whose one-time setup is not done (stop their
+/// server, so nothing loads the vendor's library), and serve them again once
+/// it is. `readers`: what pcscd lists now.
+fn gate(hub: &Rc<Hub>, readers: &[String]) {
+    let disabled = hub.settings.borrow().disabled_drivers.clone();
+    let ds: Vec<_> = hub
+        .drivers
+        .borrow()
+        .iter()
+        .filter(|d| (d.usb || d.pcscd_ignore.is_some()) && d.available())
+        .filter(|d| !disabled.contains(&d.id))
+        .cloned()
+        .collect();
+    for d in ds {
+        let waiting = !crate::setup::unmet(&d, readers).is_empty();
+        let running = hub.server.borrow().running().contains(&d.id);
+        let held = hub.server.borrow().failure_of(&d.id) == Some(setup_reason());
+        if waiting && running {
+            hub.generation.set(hub.generation.get() + 1);
+            hub.health.borrow_mut().forget(&d.id);
+            hub.published.borrow_mut().retain(|x| x != &d.id);
+            hub.server.borrow_mut().stop_driver(&d.id, &setup_reason());
+            *hub.host_checked.borrow_mut() = None;
+        } else if !waiting && held {
+            hub.generation.set(hub.generation.get() + 1);
+            hub.server.borrow_mut().restart_driver(&d);
+        }
+    }
 }
 
 /// When the host was last checked, and for which (label, serial) tokens.

@@ -552,6 +552,8 @@ mod tests {
                     )
                 })
                 .collect(),
+            usb: false,
+            pcscd_ignore: None,
         }
     }
 

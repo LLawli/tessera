@@ -27,6 +27,12 @@
 //! `[when_on.<other driver id>.env]` changes some of those variables while
 //! that other driver is switched on too. OpenSC uses it to leave to
 //! SafeNet's driver the cards both know (see flatpak/drivers/opensc).
+//!
+//! A driver that talks to its token over USB itself, not through pcscd,
+//! says so: `usb = true` (Tessera needs the USB devices, a permission the
+//! user grants) and `pcscd_ignore = "<reader name>"` (the system's pcscd
+//! must leave that reader alone, or both talk to the token at once and it
+//! hangs). Until both are done the driver is not served (setup.rs).
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -64,6 +70,10 @@ struct DriverFile {
     env: BTreeMap<String, String>,
     #[serde(default)]
     when_on: BTreeMap<String, WhenOn>,
+    #[serde(default)]
+    usb: bool,
+    #[serde(default)]
+    pcscd_ignore: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -86,6 +96,10 @@ pub struct Driver {
     pub env: BTreeMap<String, String>,
     /// Changes to `env` while another driver (the key) is on as well.
     pub when_on: BTreeMap<String, BTreeMap<String, String>>,
+    /// Talks to the token's USB device itself (setup.rs).
+    pub usb: bool,
+    /// The reader the system's pcscd must ignore (setup.rs).
+    pub pcscd_ignore: Option<String>,
 }
 
 impl Driver {
@@ -195,6 +209,8 @@ fn load_one(dir: &Path) -> Result<Driver> {
             .into_iter()
             .map(|(other, w)| (other.to_lowercase(), env_map(dir, w.env)))
             .collect(),
+        usb: d.usb,
+        pcscd_ignore: d.pcscd_ignore.filter(|s| !s.trim().is_empty()),
     })
 }
 

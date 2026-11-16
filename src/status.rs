@@ -131,6 +131,23 @@ pub fn readers() -> Readers {
     Readers::Ok(list)
 }
 
+/// The names of the readers pcscd lists (none when it cannot be reached).
+/// TESSERA_TEST_READERS (names split by `;`) stands in for pcscd in the
+/// window test (tests/gui), to show the one-time setup of setup.rs.
+pub fn reader_names() -> Vec<String> {
+    if let Ok(names) = std::env::var("TESSERA_TEST_READERS") {
+        return names
+            .split(';')
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+            .collect();
+    }
+    match readers() {
+        Readers::Ok(list) => list.into_iter().map(|r| r.name).collect(),
+        Readers::NoService(_) => vec![],
+    }
+}
+
 fn client_module() -> String {
     std::env::var("TESSERA_CLIENT_MODULE").unwrap_or_else(|_| paths::CLIENT_MODULE.to_string())
 }

@@ -78,6 +78,19 @@ pub const KNOWN: &[Known] = &[
         atr_bytes: &[],
         experimental: true,
     },
+    // Feitian's own library, for the ePass2003 formatted by its Windows
+    // software (OpenSC reads only the ones it formats). No reader words:
+    // the reader is the same either way, and OpenSC is the default.
+    Known {
+        id: "epass2003",
+        name: "ePass2003 (Feitian)",
+        vendor: "Feitian",
+        tokens: "ePass2003 formatted by Feitian's Windows software, as certificate authorities deliver it",
+        extension: "io.github.pedrohqb.Tessera.Driver.ePass2003",
+        reader_words: &[],
+        atr_bytes: &[],
+        experimental: true,
+    },
 ];
 
 /// The known driver with this id, installed or not.
@@ -214,7 +227,7 @@ mod tests {
         let k = known("remoteid").unwrap();
         assert!(k.experimental);
         assert_eq!(k.extension, "io.github.pedrohqb.Tessera.Driver.RemoteID");
-        assert!(KNOWN.iter().filter(|k| k.experimental).count() == 1);
+        assert_eq!(KNOWN.iter().filter(|k| k.experimental).count(), 2);
         // A cloud certificate: no reader means it.
         assert_eq!(for_reader("RemoteID", &[]).map(|k| k.id), None);
     }
