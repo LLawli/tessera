@@ -11,13 +11,15 @@ To add a line, open an issue with the **Compatibility report** template (or tell
 | Serving a token to apps, signing with PSS and PKCS#1 v1.5, refusing a wrong PIN | Ubuntu 24.04 | SoftHSM token through `tessera serve`, `tessera remote` and `p11-kit-client.so` (`tests/drivers.rs`) |
 | The SerproID defect (a driver that keeps the mechanism pointer) | Ubuntu 24.04 | Fake driver that fails without Tessera's copy (`tests/drivers.rs`) |
 | A driver that never answers is not published | Ubuntu 24.04 | Fake driver (`tests/drivers.rs`) |
+| A USB driver served by one process to every connection, signing at once from several, and its RSA-PSS made with raw RSA verified by OpenSSL | Ubuntu 24.04 | SoftHSM as a `usb = true` driver with `TESSERA_PSS_VIA_RAW=1` (`tests/drivers.rs`) |
+| A USB driver held back until its one-time setup, with the setup row shown | Ubuntu 24.04 | Window test, with `TESSERA_TEST_READERS` standing in for pcscd |
 | The window's buttons: native Firefox, Okular and Papers, PJeOffice Pro, and the Firefox Flatpak's step 2 | Ubuntu 24.04 | Through the accessibility tree, on a made-up home folder (`tests/gui/test_window.py`) |
 | The p11-kit path written into PJeOffice Pro's `list.a3` exists | Fedora, Debian 13, Ubuntu 24.04, Arch Linux, openSUSE Tumbleweed | Containers with each distribution's default packages (`detection_matches_this_system`) |
 | Whether NSS already loads p11-kit (no Set up needed) matches Tessera's verdict | Same five | A fresh NSS database, as a browser makes it, listed with `modutil`. On Fedora, NSS loads p11-kit through crypto-policies; on the other four, it does not |
 | The vendors' downloads still match their pinned SHA256 | — | Weekly workflow (`check-downloads.yml`); a mismatch opens an issue |
 | The Flatpak builds, with every icon the window uses | GNOME 51 runtime | `flatpak-builder` |
 | Each driver extension builds, installs on the real vendor downloads, and leaves its module and tools where `driver.toml` says | GNOME 51 runtime | `flatpak-builder`, then `flatpak install` (`ci.yml`) |
-| A token's reader or ATR points to the right driver extension | — | `src/catalog.rs` tests (eToken 5110, StarSign CUT S, ePass2003) |
+| A token's reader or ATR points to the right driver extension | — | `src/catalog.rs` tests (eToken 5110, StarSign CUT S; none for the ePass2003's reader) |
 | Each web signer extension builds, installs on the real vendor download, and has its start script, program and library link; Certisign's dialog paths are all rewritten | GNOME 51 runtime | `flatpak-builder`, then `flatpak install` (`ci.yml`) |
 | A browser's command for a web signer writes valid manifests in each of its folders, in `sh` (and so bash and zsh) and fish; the override shows whether it is done | — | `src/signers.rs` tests; fish by hand |
 
@@ -52,11 +54,13 @@ To add a line, open an issue with the **Compatibility report** template (or tell
 | Bluefin (GNOME) | SafeSign (GD Burti), through Tessera 0.4.0 and the three web signer extensions from FlatPark (system installation) | Web PKI, Softplan WebSigner and Certisign WebSigner, Firefox and Brave (Flatpak) | Work, with the six commands from the window, three per browser (November 10, 2026, after removing the test build) |
 | CachyOS | SafeSign (GD Burti) and SerproID, through Tessera's extensions (test build) | PJeOffice Pro (FlatPark) | Lists both. Before 0.4.2 it listed only the GD Burti: SerproID's serial was the same as the trust store's ([Drivers](drivers.md#its-serial-number)) (November 12, 2026) |
 | CachyOS | SafeSign (GD Burti) and SerproID, through Tessera's extensions (test build) | PJeOffice Pro, native | Switching a driver off with PJeOffice open no longer takes the other tokens away ([History](history.md) item 56) (November 12, 2026) |
+| Bluefin (GNOME) | ePass2003 (Feitian, from Soluti), through the ePass2003 extension (test build) | Firefox (Flatpak), Brave, PJeOffice Pro | Works after the two one-time steps: Serpro's client certificate test (`ccd.serpro.gov.br/testeaqui`, TLS 1.3) passes in Firefox and Brave, PJeOffice signs with Firefox open on the same token. Before Tessera made PSS itself, Firefox failed the handshake after the PIN ([Drivers](drivers.md#epass2003-feitian)) (November 16, 2026) |
 | KDE Plasma (CachyOS) | a real token (type not recorded) | Web PKI and WebSigner, vendors' official packages, native browsers | Work with p11-kit's library (`/lib/libp11-kit.so`, the same module as `p11-kit-proxy.so` there) added by hand under the plugin's custom options |
 
 Not yet confirmed by hand:
 
 - **The apps added in November 2026** (see [Apps](apps.md)): Thunderbird and Evolution, as Flatpaks and native; LibreOffice, as a Flatpak and native; Assinador SERPRO, as a Flatpak. Their set-up is checked by unit tests on a made-up home folder, but they have not been tried with a real token yet (JSignPdf and Master PDF Editor have, above).
-- **The OpenSC driver** (November 2026; see [Drivers](drivers.md#opensc)): built into Tessera, it serves every card OpenSC knows, the ePass2003 formatted by OpenSC among them. Checked without a token (served, listed and published with no reader). The one real token tried, an ePass2003 formatted by Feitian's Windows software, was recognized but not read ("PKCS#15 binding failed: Unsupported card"); a token OpenSC can read is still to be tried.
+- **The OpenSC driver** (November 2026; see [Drivers](drivers.md#opensc)): built into Tessera, it serves every card OpenSC knows. Checked without a token (served, listed and published with no reader). The one real token tried, an ePass2003 formatted by Feitian's Windows software, was recognized but not read ("PKCS#15 binding failed: Unsupported card"; the [ePass2003 extension](drivers.md#epass2003-feitian) reads it); a token OpenSC can read is still to be tried.
+- **The ePass2003 extension** beyond the first session: unplugging and plugging the token back with Tessera open, a reboot, suspend; Flatpak older than 1.15.11 (`--device=all`); distributions other than Bluefin.
 - **RemoteID** (see [Drivers](drivers.md#remoteid)): listed as experimental; not yet tried with a real account.
 - **Snap** packages (Ubuntu's Firefox and Chromium): not supported.

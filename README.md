@@ -10,7 +10,7 @@ O Tessera é uma central de tokens para Flatpak. Ele faz o token A3 ou o certifi
 
 *Tessera* era, em latim, a pequena peça que identificava quem a portava.
 
-O Tessera já traz o driver **OpenSC**, software livre, para os muitos cartões e tokens que o OpenSC atende (PIV e YubiKey, OpenPGP, CardOS, IDPrime, carteiras de identidade de vários países) e para o token ePass2003 (Feitian) formatado pelo próprio OpenSC. O ePass2003 entregue pelas certificadoras, formatado pelo programa da Feitian para Windows, usa um formato próprio que o OpenSC não lê.
+O Tessera já traz o driver **OpenSC**, software livre, para os muitos cartões e tokens que o OpenSC atende (PIV e YubiKey, OpenPGP, CardOS, IDPrime, carteiras de identidade de vários países).
 
 Os drivers dos fabricantes são extensões, que você instala conforme o seu token (veja [Instalação](#3-instalar-o-driver-do-seu-token)):
 
@@ -18,9 +18,10 @@ Os drivers dos fabricantes são extensões, que você instala conforme o seu tok
 |---|---|
 | GD Burti (StarSign) e outros tokens SafeSign, atualmente os mais usados pela advocacia; traz o **Token Administration**, para trocar e desbloquear o PIN | `io.github.pedrohqb.Tessera.Driver.SafeSign` |
 | SafeNet eToken 5100/5110 e cartões IDPrime | `io.github.pedrohqb.Tessera.Driver.SafeNet` |
+| ePass2003 (Feitian), como as certificadoras entregam; pede duas configurações únicas, mostradas na página **Drivers** ([abaixo](#epass2003-configuração-única)) | `io.github.pedrohqb.Tessera.Driver.ePass2003` |
 | Certificado em nuvem do Serpro, com o aplicativo SerproID | `io.github.pedrohqb.Tessera.Driver.SerproID` |
 | Certificado em nuvem RemoteID, da Certisign (experimental; driver independente, feito por engenharia reversa, sem vínculo com a Certisign; mantido pelo autor do RemoteID) | `io.github.pedrohqb.Tessera.Driver.RemoteID` |
-| Tokens do OpenSC (ePass2003 formatado pelo OpenSC, PIV, YubiKey e outros) | nenhuma: já vem no Tessera |
+| Tokens do OpenSC (PIV, YubiKey e outros) | nenhuma: já vem no Tessera |
 
 Os tokens ficam disponíveis para estes aplicativos, em Flatpak ou instalados pela distribuição:
 
@@ -129,7 +130,7 @@ As atualizações chegam com o `flatpak update`.
 
 Instale a extensão do seu token (tabela no início) de um destes jeitos:
 
-- **Pela loja de aplicativos** (GNOME Software, Discover): na página do Tessera, em **Complementos**, ou pela página do driver no [FlatPark](https://flatpark.org/apps/io.github.pedrohqb.Tessera/), no botão de instalar. Os nomes são **SafeSign IC**, **SafeNet Authentication Client**, **SerproID** e **RemoteID**.
+- **Pela loja de aplicativos** (GNOME Software, Discover): na página do Tessera, em **Complementos**, ou pela página do driver no [FlatPark](https://flatpark.org/apps/io.github.pedrohqb.Tessera/), no botão de instalar. Os nomes são **SafeSign IC**, **SafeNet Authentication Client**, **ePass2003 (Feitian)**, **SerproID** e **RemoteID**.
 - **Pelo terminal,** na mesma instalação do Tessera (`--user` ou `--system`). Por exemplo, para o GD Burti:
 
 ```bash
@@ -137,6 +138,15 @@ flatpak --user install flatpark io.github.pedrohqb.Tessera.Driver.SafeSign
 ```
 
 Na dúvida, abra o Tessera com o token conectado: se faltar o driver, a linha do leitor, na página **Início**, diz qual instalar. A página **Drivers** lista em **Disponíveis para instalar** os que ainda não estão instalados (o RemoteID, marcado como **Experimental**), cada um com um botão para a página dele no FlatPark e outro que copia o comando. Depois de instalar, saia do Tessera pelo menu e abra de novo.
+
+##### ePass2003: configuração única
+
+O driver da Feitian fala com o token direto pelo USB, sem passar pelo serviço de cartões do sistema (`pcscd`). Por isso, depois de instalá-lo, a página **Drivers** mostra duas configurações, cada uma com um comando para copiar e rodar uma vez no terminal:
+
+1. **USB:** deixa o Tessera, e só ele, alcançar os dispositivos USB (`flatpak override --user --device=usb io.github.pedrohqb.Tessera`). Depois, reinicie o Tessera pelo menu.
+2. **Serviço de cartões:** faz o `pcscd` deixar o ePass2003 para o driver; se os dois falarem com o token ao mesmo tempo, ele trava até ser desconectado. O comando pede a sua senha. O aviso de que o `pcscd.socket` continua ativo é normal. O comando para desfazer aparece ao passar o mouse sobre a linha.
+
+Enquanto faltar alguma, o Tessera não carrega o driver. Feitas as duas, as linhas somem e o driver começa sozinho; a primeira leitura do token leva uns 15 segundos.
 
 #### 4. Instalar os assinadores web (se precisar)
 
@@ -200,7 +210,7 @@ Fechar a janela não desliga o Tessera: ele fica na bandeja. Para dúvidas e pro
 
 ### A fazer
 
-- **Testar com token real** o driver OpenSC e os aplicativos acrescentados por último: Thunderbird, Evolution, LibreOffice e Assinador SERPRO (o JSignPdf e o Master PDF Editor já foram testados). O primeiro ePass2003 testado, formatado pelo programa da Feitian para Windows, não foi lido pelo OpenSC; falta testar a biblioteca da própria Feitian para Linux.
+- **Testar com token real** o driver OpenSC e os aplicativos acrescentados por último: Thunderbird, Evolution, LibreOffice e Assinador SERPRO (o JSignPdf e o Master PDF Editor já foram testados).
 - **Testar o RemoteID** com uma conta de verdade.
 - **Testar a extensão SafeNet** com um token de verdade. O driver já funcionou quando vinha embutido no Tessera; falta confirmar o empacotamento como extensão, agora com a versão 10.9.6885, do pacote da GlobalSign (SafeSign e SerproID já foram testados).
 
@@ -221,7 +231,7 @@ Tessera is a token hub for Flatpak. It makes A3 tokens and cloud certificates wo
 
 *Tessera* was the Latin word for a small token that identified its bearer.
 
-Tessera comes with the **OpenSC** driver, free software, for the many cards and tokens OpenSC supports (PIV and YubiKey, OpenPGP, CardOS, IDPrime, national ID cards) and for Feitian's ePass2003 token formatted by OpenSC itself. The ePass2003 handed out by Brazilian certificate authorities, formatted by Feitian's Windows software, uses a format of its own that OpenSC does not read.
+Tessera comes with the **OpenSC** driver, free software, for the many cards and tokens OpenSC supports (PIV and YubiKey, OpenPGP, CardOS, IDPrime, national ID cards).
 
 The vendors' drivers are extensions, installed for the token you have (see [Installation](#3-install-your-tokens-driver)):
 
@@ -229,9 +239,10 @@ The vendors' drivers are extensions, installed for the token you have (see [Inst
 |---|---|
 | GD Burti (StarSign) and other SafeSign tokens, currently the most used by Brazilian lawyers; comes with **Token Administration**, to change and unlock the PIN | `io.github.pedrohqb.Tessera.Driver.SafeSign` |
 | SafeNet eToken 5100/5110 and IDPrime cards | `io.github.pedrohqb.Tessera.Driver.SafeNet` |
+| Feitian's ePass2003, as Brazilian certificate authorities deliver it; needs two one-time steps, shown on the **Drivers** page ([below](#epass2003-one-time-setup)) | `io.github.pedrohqb.Tessera.Driver.ePass2003` |
 | Serpro's cloud certificate, with the SerproID app | `io.github.pedrohqb.Tessera.Driver.SerproID` |
 | Certisign's RemoteID cloud certificate (experimental; independent driver, made by reverse engineering, not affiliated with Certisign; maintained by RemoteID's developer) | `io.github.pedrohqb.Tessera.Driver.RemoteID` |
-| OpenSC's tokens (ePass2003 formatted by OpenSC, PIV, YubiKey and others) | none: built into Tessera |
+| OpenSC's tokens (PIV, YubiKey and others) | none: built into Tessera |
 
 The tokens are available to these apps, as Flatpaks or installed from the distribution:
 
@@ -336,7 +347,7 @@ Updates come with `flatpak update`.
 
 Install your token's extension (table at the top) in one of these ways:
 
-- **From the app store** (GNOME Software, Discover): on Tessera's page, under **Add-ons**, or from the driver's page on [FlatPark](https://flatpark.org/apps/io.github.pedrohqb.Tessera/), with its install button. The names are **SafeSign IC**, **SafeNet Authentication Client**, **SerproID** and **RemoteID**.
+- **From the app store** (GNOME Software, Discover): on Tessera's page, under **Add-ons**, or from the driver's page on [FlatPark](https://flatpark.org/apps/io.github.pedrohqb.Tessera/), with its install button. The names are **SafeSign IC**, **SafeNet Authentication Client**, **ePass2003 (Feitian)**, **SerproID** and **RemoteID**.
 - **From a terminal,** in the same installation as Tessera (`--user` or `--system`). For a GD Burti, say:
 
 ```bash
@@ -344,6 +355,15 @@ flatpak --user install flatpark io.github.pedrohqb.Tessera.Driver.SafeSign
 ```
 
 If unsure, open Tessera with the token plugged in: when its driver is missing, the reader's row, on the **Home** page, says which one to install. The **Drivers** page lists under **Available to install** the ones not installed yet (RemoteID marked **Experimental**), each with a button to its FlatPark page and another that copies the command. After installing, quit Tessera from its menu and open it again.
+
+##### ePass2003: one-time setup
+
+Feitian's driver talks to the token over USB itself, not through the system's smart card service (`pcscd`). So, once it is installed, the **Drivers** page shows two steps, each with a command to copy and run once in a terminal:
+
+1. **USB:** lets Tessera, and only Tessera, reach the USB devices (`flatpak override --user --device=usb io.github.pedrohqb.Tessera`). Then restart Tessera from its menu.
+2. **Card service:** makes `pcscd` leave the ePass2003 to the driver; if both talk to the token at once, it hangs until it is unplugged. The command asks for your password. The warning that `pcscd.socket` is still active is expected. The command that undoes it shows when you hover over the row.
+
+Until both are done, Tessera does not load the driver. Once they are, the rows go away and the driver starts by itself; the first read of the token takes about 15 seconds.
 
 #### 4. Install the web signers (if you need them)
 
@@ -403,7 +423,7 @@ Closing the window does not stop Tessera: it stays in the tray. For questions an
 
 ### To do
 
-- **Test with a real token** the OpenSC driver and the apps added last: Thunderbird, Evolution, LibreOffice and Assinador SERPRO (JSignPdf and Master PDF Editor have been tested). The first ePass2003 tried, formatted by Feitian's Windows software, was not read by OpenSC; Feitian's own Linux library is still to be tried.
+- **Test with a real token** the OpenSC driver and the apps added last: Thunderbird, Evolution, LibreOffice and Assinador SERPRO (JSignPdf and Master PDF Editor have been tested).
 - **Test RemoteID** with a real account.
 - **Test the SafeNet extension** with a real token. The driver already worked when it was built into Tessera; what is left is confirming its packaging as an extension, now with version 10.9.6885, from GlobalSign's package (SafeSign and SerproID have been tested).
 

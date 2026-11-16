@@ -20,7 +20,8 @@
 - [O token não aparece no Tessera.](#o-token-não-aparece-no-tessera)
 - [Meu token GD Burti (ou cartão SafeSign) trava ou some.](#meu-token-gd-burti-ou-cartão-safesign-trava-ou-some)
 - [O token aparece duas vezes, ou o navegador pede o PIN duas vezes.](#o-token-aparece-duas-vezes-ou-o-navegador-pede-o-pin-duas-vezes)
-- [Como troco ou desbloqueio o PIN de um token do OpenSC (ePass2003)?](#como-troco-ou-desbloqueio-o-pin-de-um-token-do-opensc-epass2003)
+- [Instalei o driver do ePass2003, mas o token não aparece.](#instalei-o-driver-do-epass2003-mas-o-token-não-aparece)
+- [Como troco ou desbloqueio o PIN de um token do OpenSC?](#como-troco-ou-desbloqueio-o-pin-de-um-token-do-opensc)
 - [Meu certificado é em nuvem. O Tessera atende?](#meu-certificado-é-em-nuvem-o-tessera-atende)
 
 **Aplicativos**
@@ -107,7 +108,7 @@ O Tessera identificou um p11-kit antigo demais no sistema. Veja a [pergunta sobr
 
 Veja primeiro se o driver dele está instalado: os drivers dos fabricantes são extensões à parte (tabela no [README](README.md)). Com o token conectado, se faltar o driver, a linha do leitor, na página **Início**, diz qual instalar; a página **Drivers** lista em **Disponíveis para instalar** os que faltam, com o botão da loja e o comando pronto para copiar. Depois de instalar, use **Reiniciar o Tessera** no menu. Se o driver já estiver lá, tire e ponha o token. Se um driver aparecer como "Parado", aperte **Reiniciar**. Confira também se o serviço de cartões está ligado (`sudo systemctl enable --now pcscd.socket`).
 
-**ePass2003 entregue por certificadora:** o formatado pelo programa da Feitian para Windows usa um formato próprio, que o OpenSC não lê. A leitora aparece, mas o token não. O OpenSC lê o ePass2003 formatado por ele mesmo. Veja [Drivers](docs/drivers.md#opensc) (em inglês).
+**ePass2003 entregue por certificadora:** ele precisa da extensão **ePass2003 (Feitian)**; veja a [pergunta sobre ele](#instalei-o-driver-do-epass2003-mas-o-token-não-aparece).
 
 #### Meu token GD Burti (ou cartão SafeSign) trava ou some.
 
@@ -122,7 +123,15 @@ O token também aparece duas vezes quando **dois drivers atendem o mesmo token**
 - **Dois drivers do Tessera** (o OpenSC e o do fornecedor): desligue um deles na página **Drivers**. Com o SafeNet ligado, o OpenSC já deixa para ele os cartões IDPrime e o eToken 5110.
 - **O sistema também tem o OpenSC** (o Fedora e o Bluefin o trazem instalado): o Tessera já o desliga, e não deve haver token em dobro por isso. Se você religou o OpenSC do sistema (a chave **Desligar o OpenSC do sistema**, na página Sistema), o token do OpenSC chega aos aplicativos pelos dois: desligue o OpenSC no Tessera ou ligue a chave de novo.
 
-#### Como troco ou desbloqueio o PIN de um token do OpenSC (ePass2003)?
+#### Instalei o driver do ePass2003, mas o token não aparece.
+
+- **Faltam as configurações únicas.** A página **Drivers** mostra, abaixo do driver, as que faltam, cada uma com o comando para copiar e rodar no terminal: liberar o USB para o Tessera (depois, reinicie o Tessera pelo menu) e fazer o serviço de cartões (`pcscd`) deixar o token para o driver. Enquanto faltar alguma, o driver fica "Aguardando a configuração única abaixo". Veja o [README](README.md#epass2003-configuração-única).
+- **É a primeira leitura.** O driver lê o token inteiro na primeira vez: leva uns 15 segundos depois de ligar o driver (e pode demorar assim de novo quando o token é reconectado).
+- **O token travou.** Se o token sumir e não voltar, ou o driver aparecer como "Parado", tire e ponha o token e aperte **Reiniciar** na linha do driver. Se ainda assim não voltar, reinicie o computador.
+
+O registro do driver fica em `~/.var/app/io.github.pedrohqb.Tessera/data/tessera/logs/epass2003.log`.
+
+#### Como troco ou desbloqueio o PIN de um token do OpenSC?
 
 O OpenSC não tem programa com janela para isso; as ferramentas de linha de comando dele vêm no Tessera. Num terminal, com o token conectado:
 
@@ -222,7 +231,8 @@ Abra uma [issue](https://github.com/pedrohqb/tessera/issues/new/choose) com o mo
 - [The token does not appear in Tessera.](#the-token-does-not-appear-in-tessera)
 - [My GD Burti token (or SafeSign card) hangs or disappears.](#my-gd-burti-token-or-safesign-card-hangs-or-disappears)
 - [The token shows twice, or the browser asks for the PIN twice.](#the-token-shows-twice-or-the-browser-asks-for-the-pin-twice)
-- [How do I change or unblock the PIN of an OpenSC token (ePass2003)?](#how-do-i-change-or-unblock-the-pin-of-an-opensc-token-epass2003)
+- [I installed the ePass2003 driver, but the token does not show.](#i-installed-the-epass2003-driver-but-the-token-does-not-show)
+- [How do I change or unblock the PIN of an OpenSC token?](#how-do-i-change-or-unblock-the-pin-of-an-opensc-token)
 - [My certificate is in the cloud. Does Tessera support it?](#my-certificate-is-in-the-cloud-does-tessera-support-it)
 
 **Apps**
@@ -309,7 +319,7 @@ Tessera found a p11-kit too old on the system. See the [question on failing sign
 
 First check that its driver is installed: the vendors' drivers are separate extensions (table in the [README](README.md)). With the token plugged in, if its driver is missing, the reader's row, on the **Home** page, says which one to install; the **Drivers** page lists under **Available to install** the ones missing, with the store button and the command ready to copy. After installing, use **Restart Tessera** in the menu. If the driver is there, unplug the token and plug it in again. If a driver shows as "Stopped", press **Restart**. Also check that the smart card service is on (`sudo systemctl enable --now pcscd.socket`).
 
-**ePass2003 from a certificate authority:** one formatted by Feitian's Windows software uses a format of its own, which OpenSC does not read. The reader shows, but the token does not. OpenSC reads the ePass2003 it formats itself. See [Drivers](docs/drivers.md#opensc).
+**ePass2003 from a certificate authority:** it needs the **ePass2003 (Feitian)** extension; see the [question about it](#i-installed-the-epass2003-driver-but-the-token-does-not-show).
 
 #### My GD Burti token (or SafeSign card) hangs or disappears.
 
@@ -324,7 +334,15 @@ A token also shows twice when **two drivers serve it**, and Tessera says so in i
 - **Two of Tessera's drivers** (OpenSC and the vendor's): switch one off on the **Drivers** page. While SafeNet is on, OpenSC already leaves IDPrime cards and the eToken 5110 to it.
 - **The system has OpenSC too** (Fedora and Bluefin ship it installed): Tessera already switches it off, so it should not show tokens twice. If you turned the system's OpenSC back on (the **Switch off the system's OpenSC** switch, on the System page), OpenSC's token reaches the apps through both: switch OpenSC off in Tessera, or turn the switch back on.
 
-#### How do I change or unblock the PIN of an OpenSC token (ePass2003)?
+#### I installed the ePass2003 driver, but the token does not show.
+
+- **The one-time steps are missing.** The **Drivers** page shows, below the driver, the ones still to do, each with a command to copy and run in a terminal: letting Tessera reach the USB devices (then restart Tessera from its menu) and making the smart card service (`pcscd`) leave the token to the driver. Until both are done, the driver shows "Waiting for the one-time setup below". See the [README](README.md#epass2003-one-time-setup).
+- **It is the first read.** The driver reads the whole token the first time: about 15 seconds after the driver is switched on (and it may take as long again when the token is plugged back in).
+- **The token hung.** If the token disappears and does not come back, or the driver shows as "Stopped", unplug the token, plug it in again and press **Restart** on the driver's row. If it still does not come back, restart the computer.
+
+The driver's log is `~/.var/app/io.github.pedrohqb.Tessera/data/tessera/logs/epass2003.log`.
+
+#### How do I change or unblock the PIN of an OpenSC token?
 
 OpenSC has no windowed program for that; its command-line tools come with Tessera. In a terminal, with the token plugged in:
 

@@ -37,6 +37,9 @@ The questions users ask most, with the answers in plain words, are in the [FAQ](
 | `SSL_ERROR_DECRYPT_ERROR_ALERT` in Firefox with SerproID | PKCS#1 v1.5 signature instead of PSS | Update Tessera (the test build that did the size query had this effect) |
 | "Não foi possível adicionar módulo" in Firefox | a hung driver published on the host | Switch the driver off in the window; current supervision already prevents this |
 | Firefox Set up does nothing | Firefox was open | Close Firefox and try again |
+| ePass2003 driver "Waiting for the one-time setup below" | Tessera does not reach the USB devices, or pcscd still lists the token's reader | Run the commands in the rows below the driver; after the USB one, **Restart Tessera** ([Drivers](drivers.md#epass2003-feitian)) |
+| ePass2003: the token shows once, then disappears; `dmesg` has `error -71` or `not accepting address` for it | the token hung in the middle of a USB transfer (before `tessera shared`, every listing could cause it; or pcscd and the library both talking to it) | Unplug it and plug it in again, then **Restart** on the driver's row; check that pcscd skips it (`systemctl show pcscd.service -p Environment`) |
+| ePass2003: `SSL_ERROR_HANDSHAKE_FAILED` after the PIN on TLS 1.3 sites; `probe-sign` says PSS failed in `C_SignInit` | the library fails RSA-PSS; the extension's `driver.toml` must have `TESSERA_PSS_VIA_RAW = "1"` (test builds before it did not) | Update Tessera and the extension |
 
 ## Built-in tools
 
@@ -44,12 +47,12 @@ All of them run inside Tessera's sandbox: `flatpak run --command=tessera io.gith
 
 - **`status`:** drivers (serving, stopped, missing files), readers, tokens and certificates.
 - **`probe-module MODULE`:** loads a driver **directly**, without p11-kit, and reports each step: initialization (with `CKF_OS_LOCKING_OK` and, if that fails, without it), library information, slots, tokens and mechanisms. This is what showed that SerproID worked directly, but not through p11-kit.
-- **`probe-sign MODULE`:** finds a private key and signs a fixed SHA-256 digest with `CKM_RSA_PKCS` and with `CKM_RSA_PKCS_PSS`. `TESSERA_PIN=…` logs in; `TESSERA_MECH=PSS` limits it to mechanisms with that text in their name. To use it through p11-kit, pass `p11-kit-client.so` as the module and `P11_KIT_SERVER_ADDRESS=unix:path=$XDG_RUNTIME_DIR/tessera/<driver>`. It uses the `cryptoki` library, which asks for the size before signing. With SerproID, this leads to the path that returns PKCS#1 v1.5 (see [Drivers](drivers.md#serproid)). To imitate a browser, use `sign-test.py`.
+- **`probe-sign MODULE`:** finds a private key and signs a fixed SHA-256 digest with `CKM_RSA_PKCS` and with `CKM_RSA_PKCS_PSS`. `TESSERA_PIN=…` logs in; `TESSERA_MECH=PSS` limits it to mechanisms with that text in their name; `TESSERA_SIG_OUT=<folder>` writes each signature and the signed hash there, to check them with OpenSSL. To use it through p11-kit, pass `p11-kit-client.so` as the module and `P11_KIT_SERVER_ADDRESS=unix:path=$XDG_RUNTIME_DIR/tessera/<driver>`. It uses the `cryptoki` library, which asks for the size before signing. With SerproID, this leads to the path that returns PKCS#1 v1.5 (see [Drivers](drivers.md#serproid)). To imitate a browser, use `sign-test.py`.
 - **`list-tokens`:** what the window uses to list a driver's tokens; reads `P11_KIT_SERVER_ADDRESS`.
 
 ### Call tracer
 
-With `TESSERA_REMOTE_TRACE=1` in the environment of a driver's server, `tessera remote` writes to the driver's log every PKCS#11 call that reaches it (except `C_GenerateKeyPair` and `C_UnwrapKey`, which have eight arguments): arguments (mechanisms, parameters, attribute templates, data), result and duration. Example of a server started by hand, inside the sandbox:
+With `TESSERA_REMOTE_TRACE=1` in the environment of a driver's server, `tessera remote` (or `tessera shared`, for a USB driver) writes to the driver's log every PKCS#11 call that reaches it (except `C_GenerateKeyPair` and `C_UnwrapKey`, which have eight arguments): arguments (mechanisms, parameters, attribute templates, data), result and duration. Example of a server started by hand, inside the sandbox:
 
 ```sh
 flatpak run --command=sh io.github.pedrohqb.Tessera -c '

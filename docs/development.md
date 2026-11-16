@@ -13,6 +13,9 @@ src/
     supervise.rs  supervision with or without the window, the tray and the background status
   server.rs     one p11-kit-server per driver (process group, PDEATHSIG, restart)
   remote.rs     `tessera remote`: the process that loads the driver on each connection
+  shared.rs     `tessera shared`: one process that loads a USB driver once and serves every connection
+  setup.rs      a USB driver's one-time setup: the USB devices, pcscd leaving its reader (the commands)
+  pss.rs        RSA-PSS made with the driver's raw RSA (TESSERA_PSS_VIA_RAW; the ePass2003's)
   stable.rs     stable copy of the mechanism parameters (the SerproID defect)
   serial.rs     the token serial a driver reports (TESSERA_TOKEN_SERIAL; SerproID's)
   trace.rs      call recorder (TESSERA_REMOTE_TRACE=1)
@@ -99,7 +102,10 @@ To remove a test build: `flatpak uninstall --user io.github.pedrohqb.Tessera` (i
 | `TESSERA_REMOTE_TRACE` | — | `1`: record the calls to the driver |
 | `TESSERA_REMOTE_LOAD` | `managed` | `raw`: serve the driver's own table |
 | `TESSERA_TOKEN_SERIAL` | `SERPROID` for SerproID, none for the others | in a driver's environment (`[env]` of its `driver.toml`): the serial number its tokens report |
+| `TESSERA_PSS_VIA_RAW` | — | in a driver's environment: `1` makes RSA-PSS signatures with its raw RSA (`pss.rs`) |
 | `TESSERA_PIN`, `TESSERA_MECH` | — | `probe-sign`: PIN and mechanism filter |
+| `TESSERA_SIG_OUT` | — | `probe-sign`: a folder where it writes each signature and the signed hash, to check them elsewhere |
+| `TESSERA_TEST_READERS` | — | the reader names (split by `;`) that stand in for pcscd's in the one-time setup check (`setup.rs`); for the window test |
 
 To test outside Flatpak, use a regular user: as root, p11-kit ignores the user configuration (`~/.config/pkcs11/modules`).
 
@@ -107,17 +113,18 @@ To test outside Flatpak, use a regular user: as root, p11-kit ignores the user c
 
 `cargo test` runs all the automated tests; CI runs them on every push with `TESSERA_TEST_REQUIRE=1`, so a missing tool fails the run instead of skipping a test.
 
-- **Unit tests:** the native apps' states on a made-up home folder, including the Fedora case and PJeOffice's `list.a3` (`native.rs`), driver descriptions (`drivers.rs`), the Firefox profile lock and registering/removing the client module in an NSS database (`nss.rs`, needs `libnss3.so`), and the translations: every string passed to `t(…)` has a Portuguese entry, and none has two (`i18n.rs`).
+- **Unit tests:** the native apps' states on a made-up home folder, including the Fedora case and PJeOffice's `list.a3` (`native.rs`), driver descriptions (`drivers.rs`), the one-time setup's commands and reader matching (`setup.rs`), MGF1 and the PSS encoding (`pss.rs`), the Firefox profile lock and registering/removing the client module in an NSS database (`nss.rs`, needs `libnss3.so`), and the translations: every string passed to `t(…)` has a Portuguese entry, and none has two (`i18n.rs`).
 - **End to end (`tests/drivers.rs`):** `tessera serve` with test drivers, each connection served by `tessera remote`, and `tessera probe-sign` signing through `p11-kit-client.so`, as the apps do:
   - a SoftHSM token with an RSA key: published to the host modules folder, signs with PSS and PKCS#1 v1.5 with its PIN, and refuses a wrong PIN;
   - `tests/fake-driver/keeps-mechanism-pointer.c`, which behaves like SerproID: signs PSS only because `stable.rs` hands it parameters that are still valid in `C_Sign` (without that copy the test fails, with `hash=<garbage> -> WRONG` in the driver's log);
-  - `tests/fake-driver/slow-slot-list.c`: never published, and its first timeout reported.
+  - `tests/fake-driver/slow-slot-list.c`: never published, and its first timeout reported;
+  - the SoftHSM token as a USB driver (`usb = true`, `TESSERA_PSS_VIA_RAW=1`): served by one `tessera shared`, initialized once, signs four times (three at once), refuses a wrong PIN, and its PSS signature, made with raw RSA, is verified by OpenSSL with the key.
 
   They need softhsm2, openssl, a C compiler, p11-kit's server helper, client module and headers (on Ubuntu: `softhsm2 p11-kit p11-kit-modules libp11-kit-dev libnss3 openssl gcc`). Without them, a test is skipped with a message.
 - **By hand, the full path with SoftHSM:** start a `p11-kit-server` with `P11_KIT_PRIVATEDIR` pointing to a `p11-kit-remote` that runs `target/debug/tessera remote "$@"`, and sign with `scripts/sign-test.py` through `p11-kit-client.so` and `P11_KIT_SERVER_ADDRESS`. With the environment variable `PIN=1234`, the script logs in to SoftHSM.
 - **By hand, the SerproID defect:** `gcc -shared -fPIC -o libfake.so tests/fake-driver/keeps-mechanism-pointer.c` and use it as `--provider`. Through the original `p11-kit-remote`, the server log shows `fake: C_Sign sees … hash=<garbage> -> WRONG`; through `tessera remote`, `hash=0x250 … -> OK`.
 - **On each distribution (CI only):** `cargo test --bin tessera -- --ignored detection_matches_this_system`, in containers of Fedora, Debian, Ubuntu, Arch and openSUSE with their default packages: the p11-kit path Tessera writes for PJeOffice exists; a fresh NSS database, made with `certutil`, is called ready by Tessera exactly when NSS (`modutil -list`) loads a p11-kit module; which Tessera, inside a Flatpak, can only deduce from the distribution's `os-release`. Its findings go into an annotation per distribution. This is how the Fedora case was found (a fresh database there lists nothing, yet NSS loads p11-kit-proxy through crypto-policies), and that openSUSE ships the same crypto-policies file but its NSS does not load it.
-- **The window, automatically (`tests/gui/test_window.py`):** opens Tessera on a made-up home folder and drives it through the accessibility tree (AT-SPI), as a screen reader would: the Native tab's Set up for Firefox (p11-kit-proxy.so in the profile, row Ready), Okular and Papers (no button, "Set up Firefox first", then Ready with Firefox), PJeOffice Pro (`list.a3` with this distribution's path, the other settings kept), and the Flatpak tab's step 2 for Firefox (p11-kit-client.so in the Flatpak's profile). An expander row offers no AT-SPI action, so the test reaches it with Tab and opens it with Space (`xdotool`). Run it with `xvfb-run -a dbus-run-session -- python3 tests/gui/test_window.py` after `cargo build`; it needs `at-spi2-core python3-pyatspi xvfb xdotool libnss3-tools`. `TESSERA_GUI_DUMP=1` prints the accessibility tree on a failure, `TESSERA_GUI_KEEP=1` keeps the home folder and Tessera's log.
+- **The window, automatically (`tests/gui/test_window.py`):** opens Tessera on a made-up home folder and drives it through the accessibility tree (AT-SPI), as a screen reader would: the Native tab's Set up for Firefox (p11-kit-proxy.so in the profile, row Ready), Okular and Papers (no button, "Set up Firefox first", then Ready with Firefox), PJeOffice Pro (`list.a3` with this distribution's path, the other settings kept), a USB driver held back with its one-time setup row shown (`TESSERA_TEST_READERS`), and the Flatpak tab's step 2 for Firefox (p11-kit-client.so in the Flatpak's profile). An expander row offers no AT-SPI action, so the test reaches it with Tab and opens it with Space (`xdotool`). Run it with `xvfb-run -a dbus-run-session -- python3 tests/gui/test_window.py` after `cargo build`; it needs `at-spi2-core python3-pyatspi xvfb xdotool libnss3-tools`. `TESSERA_GUI_DUMP=1` prints the accessibility tree on a failure, `TESSERA_GUI_KEEP=1` keeps the home folder and Tessera's log.
 - **The window, by hand:** `tools/gui-test/run.sh` opens Tessera in an Xvfb with its own D-Bus session, a test SoftHSM driver and a fake tray (`fake-watcher.py`, which records the icon and the menu). From there, with `. /tmp/tessera-gui/env.sh`, `xdotool` clicks and `import -window root` takes the screenshot. This is how the buttons, Restart, the switches, closing and reopening, the tray and Quit were tested. The driver `tests/fake-driver/slow-slot-list.c` (a `C_GetSlotList` that takes 12 s), compiled and placed in a folder with a `driver.toml` in `TESSERA_DRIVERS_PATH`, tests the three attempts.
 
 ## Continuous integration
@@ -144,7 +151,9 @@ A driver is a folder with a `driver.toml` (the format is in [Drivers](drivers.md
 - whether it loads on its own (`probe-module`) and through p11-kit (`list-tokens` with a server at hand);
 - whether it signs directly and through p11-kit, with `sign-test.py` (valid PSS, and not PKCS#1 v1.5);
 - whether it needs any file or environment variable (`[env]`, `create_dirs`, `library_path`);
-- how it behaves without a token: if it hangs, supervision stops it after three attempts.
+- how it behaves without a token: if it hangs, supervision stops it after three attempts;
+- whether it talks to the token through pcscd or over USB itself (`strace`, or `lsof` on `/dev/bus/usb`): one that does needs `usb = true` and, for its reader, `pcscd_ignore` ([ePass2003](drivers.md#epass2003-feitian));
+- whether the mechanisms it lists really work, PSS above all (TLS 1.3): if its PSS fails but its raw RSA is right, `TESSERA_PSS_VIA_RAW = "1"`.
 
 ## Adding a web signer
 

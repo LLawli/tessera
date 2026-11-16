@@ -89,7 +89,7 @@ pub const KNOWN: &[Known] = &[
         extension: "io.github.pedrohqb.Tessera.Driver.ePass2003",
         reader_words: &[],
         atr_bytes: &[],
-        experimental: true,
+        experimental: false,
     },
 ];
 
@@ -227,7 +227,7 @@ mod tests {
         let k = known("remoteid").unwrap();
         assert!(k.experimental);
         assert_eq!(k.extension, "io.github.pedrohqb.Tessera.Driver.RemoteID");
-        assert_eq!(KNOWN.iter().filter(|k| k.experimental).count(), 2);
+        assert_eq!(KNOWN.iter().filter(|k| k.experimental).count(), 1);
         // A cloud certificate: no reader means it.
         assert_eq!(for_reader("RemoteID", &[]).map(|k| k.id), None);
     }
