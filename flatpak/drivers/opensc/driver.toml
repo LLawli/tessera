@@ -1,6 +1,6 @@
 name = "OpenSC"
 vendor = "OpenSC Project"
-description = "Open-source driver: Feitian ePass2003, PIV cards and YubiKeys, OpenPGP cards, CardOS, IDPrime and many others"
+description = "Open-source driver: PIV cards and YubiKeys, OpenPGP cards, CardOS, IDPrime and many others"
 # Built into Tessera, not downloaded: under /app/lib in Tessera's own
 # Flatpak, under /app/extra/tessera/lib in FlatPark's package. The path is
 # relative to this folder, so it holds in both.
