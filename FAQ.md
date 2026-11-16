@@ -21,6 +21,7 @@
 - [Meu token GD Burti (ou cartão SafeSign) trava ou some.](#meu-token-gd-burti-ou-cartão-safesign-trava-ou-some)
 - [O token aparece duas vezes, ou o navegador pede o PIN duas vezes.](#o-token-aparece-duas-vezes-ou-o-navegador-pede-o-pin-duas-vezes)
 - [Instalei o driver do ePass2003, mas o token não aparece.](#instalei-o-driver-do-epass2003-mas-o-token-não-aparece)
+- [Como confiro ou troco o PUK do ePass2003?](#como-confiro-ou-troco-o-puk-do-epass2003)
 - [Como troco ou desbloqueio o PIN de um token do OpenSC?](#como-troco-ou-desbloqueio-o-pin-de-um-token-do-opensc)
 - [Meu certificado é em nuvem. O Tessera atende?](#meu-certificado-é-em-nuvem-o-tessera-atende)
 
@@ -131,6 +132,20 @@ O token também aparece duas vezes quando **dois drivers atendem o mesmo token**
 
 O registro do driver fica em `~/.var/app/io.github.pedrohqb.Tessera/data/tessera/logs/epass2003.log`.
 
+#### Como confiro ou troco o PUK do ePass2003?
+
+O PUK é o PIN do administrador do token (o "SO PIN" do PKCS#11). Cada tentativa errada gasta uma das chances do token; quando acabam, ele bloqueia de vez. Então tente uma vez, com calma, e veja antes se ainda sobram chances.
+
+- **Conferir, no Linux:** feche o Tessera e pare o `pcscd` (`sudo systemctl stop pcscd.socket pcscd.service`), porque a biblioteca da Feitian fala direto com o token. Depois, com o `pkcs11-tool` do OpenSC instalado no sistema:
+  ```
+  lib=$(flatpak info --show-location io.github.pedrohqb.Tessera.Driver.ePass2003)/files/extra/libcastle.so.1.0.0
+  pkcs11-tool --module "$lib" -L | grep -i "token flags"
+  pkcs11-tool --module "$lib" --session-rw --login --login-type so -O
+  sudo systemctl start pcscd.socket
+  ```
+  Se as marcas do token tiverem `SO PIN count low`, `SO PIN final try` ou `SO PIN locked`, pare antes de tentar. Quando ele pedir "SO PIN", digite o PUK: se listar o certificado, o PUK está certo; se der `CKR_PIN_INCORRECT`, está errado (e gastou uma chance). O `--session-rw` é necessário: sem ele, o token recusa o login de administrador antes de conferir o PUK (`CKR_SESSION_READ_ONLY_EXISTS`).
+- **Trocar:** pelo gerenciador de administrador da Feitian no **Windows** (o EnterSafe PKI Manager na versão de administrador; o de usuário só troca o PIN). No Linux, a biblioteca da Feitian confere o PUK, mas falha ao trocá-lo (`CKR_GENERAL_ERROR`). Depois da troca, a marca `SO PIN to be changed` (PUK ainda o da certificadora) some das marcas do token.
+
 #### Como troco ou desbloqueio o PIN de um token do OpenSC?
 
 O OpenSC não tem programa com janela para isso; as ferramentas de linha de comando dele vêm no Tessera. Num terminal, com o token conectado:
@@ -232,6 +247,7 @@ Abra uma [issue](https://github.com/pedrohqb/tessera/issues/new/choose) com o mo
 - [My GD Burti token (or SafeSign card) hangs or disappears.](#my-gd-burti-token-or-safesign-card-hangs-or-disappears)
 - [The token shows twice, or the browser asks for the PIN twice.](#the-token-shows-twice-or-the-browser-asks-for-the-pin-twice)
 - [I installed the ePass2003 driver, but the token does not show.](#i-installed-the-epass2003-driver-but-the-token-does-not-show)
+- [How do I check or change the ePass2003's PUK?](#how-do-i-check-or-change-the-epass2003s-puk)
 - [How do I change or unblock the PIN of an OpenSC token?](#how-do-i-change-or-unblock-the-pin-of-an-opensc-token)
 - [My certificate is in the cloud. Does Tessera support it?](#my-certificate-is-in-the-cloud-does-tessera-support-it)
 
@@ -341,6 +357,20 @@ A token also shows twice when **two drivers serve it**, and Tessera says so in i
 - **The token hung.** If the token disappears and does not come back, or the driver shows as "Stopped", unplug the token, plug it in again and press **Restart** on the driver's row. If it still does not come back, restart the computer.
 
 The driver's log is `~/.var/app/io.github.pedrohqb.Tessera/data/tessera/logs/epass2003.log`.
+
+#### How do I check or change the ePass2003's PUK?
+
+The PUK is the token's administrator PIN (PKCS#11's "SO PIN"). Each wrong try uses up one of the token's chances; when they run out, it locks for good. So try once, carefully, and check first that chances are left.
+
+- **Check it, on Linux:** quit Tessera and stop `pcscd` (`sudo systemctl stop pcscd.socket pcscd.service`), since Feitian's library talks to the token itself. Then, with OpenSC's `pkcs11-tool` installed on the system:
+  ```
+  lib=$(flatpak info --show-location io.github.pedrohqb.Tessera.Driver.ePass2003)/files/extra/libcastle.so.1.0.0
+  pkcs11-tool --module "$lib" -L | grep -i "token flags"
+  pkcs11-tool --module "$lib" --session-rw --login --login-type so -O
+  sudo systemctl start pcscd.socket
+  ```
+  If the token flags show `SO PIN count low`, `SO PIN final try` or `SO PIN locked`, stop before trying. When it asks for the "SO PIN", type the PUK: if it lists the certificate, the PUK is right; `CKR_PIN_INCORRECT` means it is wrong (and a chance was used). `--session-rw` is needed: without it the token refuses the administrator login before checking the PUK (`CKR_SESSION_READ_ONLY_EXISTS`).
+- **Change it:** with Feitian's administrator manager on **Windows** (the EnterSafe PKI Manager's administrator version; the user one only changes the PIN). On Linux, Feitian's library checks the PUK but fails to change it (`CKR_GENERAL_ERROR`). After the change, the `SO PIN to be changed` flag (the PUK still the certificate authority's) is gone from the token flags.
 
 #### How do I change or unblock the PIN of an OpenSC token?
 
