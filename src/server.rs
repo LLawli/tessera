@@ -6,6 +6,10 @@
 //! affects only its own server. For each connection, p11-kit server starts
 //! `p11-kit remote`, which loads the driver with LD_LIBRARY_PATH set from the
 //! driver's `library_path`.
+//!
+//! The drivers that talk to their token over USB themselves (`usb = true`)
+//! get `tessera shared` instead: one process that loads the driver once and
+//! serves every connection on a thread of its own (see shared.rs).
 
 use anyhow::{bail, Context, Result};
 use std::collections::BTreeMap;
@@ -110,6 +114,17 @@ fn has_connections(child: &Child) -> bool {
             .nth(2)
             .and_then(|g| g.parse::<i32>().ok())
             == Some(pgid)
+    }) || serves_a_connection(pgid)
+}
+
+/// Whether `tessera shared` (pid) has a thread serving a connection.
+fn serves_a_connection(pid: i32) -> bool {
+    let Ok(tasks) = fs::read_dir(format!("/proc/{pid}/task")) else {
+        return false;
+    };
+    tasks.flatten().any(|t| {
+        fs::read_to_string(t.path().join("comm"))
+            .is_ok_and(|c| c.trim_end() == crate::shared::CONNECTION_THREAD)
     })
 }
 
@@ -145,7 +160,21 @@ fn spawn(driver: &Driver, env: &BTreeMap<String, String>) -> Result<Child> {
         let _ = fs::remove_file(&socket);
     }
     let log = File::create(log_path(&driver.id))?;
-    let mut cmd = Command::new(paths::p11kit_server_command());
+    let mut cmd = if driver.usb {
+        let mut c = Command::new(std::env::current_exe().context("finding Tessera")?);
+        c.arg("shared").arg("--socket").arg(&socket);
+        c.arg("--provider").arg(&driver.module);
+        c
+    } else {
+        let mut c = Command::new(paths::p11kit_server_command());
+        c.arg("--foreground")
+            .arg("--name")
+            .arg(&socket)
+            .arg("--provider")
+            .arg(&driver.module)
+            .arg("pkcs11:");
+        c
+    };
     // If Tessera dies without stopping the server (killed, crashed), the
     // kernel stops the server too, so no orphan keeps the socket busy.
     // SAFETY: prctl is async-signal-safe and touches no Rust state.
@@ -157,15 +186,7 @@ fn spawn(driver: &Driver, env: &BTreeMap<String, String>) -> Result<Child> {
             Ok(())
         });
     }
-    cmd.arg("--foreground")
-        .arg("--name")
-        .arg(&socket)
-        .arg("--provider")
-        .arg(&driver.module)
-        .arg("pkcs11:")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(log);
+    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(log);
     cmd.envs(env);
     // Each connection is served by `tessera remote` instead of
     // `p11-kit remote` (see remote.rs).

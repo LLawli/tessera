@@ -38,6 +38,14 @@ pub(super) fn supervise(hub: &Rc<Hub>) {
             }
         }
         let generation = hub.generation.get();
+        status::set_patient(
+            hub.drivers
+                .borrow()
+                .iter()
+                .filter(|d| d.usb)
+                .map(|d| d.id.clone())
+                .collect(),
+        );
         let running = hub.running();
         let snap = gio::spawn_blocking(move || status::snapshot(&running)).await;
         hub.busy.set(false);

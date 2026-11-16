@@ -196,23 +196,25 @@ fn compile_fake(s: &Scratch, source: &str) -> Option<PathBuf> {
     ok.then_some(out)
 }
 
-#[test]
-fn softhsm_token_is_served_and_signs_with_its_pin() {
+/// A SoftHSM token "Teste A3" with PIN 1234 and an RSA key, in a scratch
+/// directory: (scratch, SOFTHSM2_CONF, SoftHSM's module, p11-kit's server
+/// helper, p11-kit-client.so). None when something is missing (skipped).
+fn softhsm_token(name: &str) -> Option<(Scratch, PathBuf, PathBuf, PathBuf, PathBuf)> {
     let (Some(helper), Some(client), Some(softhsm)) = (
         first(SERVER_HELPERS),
         first(CLIENT_MODULES),
         first(SOFTHSM_MODULES),
     ) else {
         need("p11-kit server helper, p11-kit-client.so or SoftHSM", false);
-        return;
+        return None;
     };
     if !need(
         "softhsm2-util and openssl",
         have("softhsm2-util") && have("openssl"),
     ) {
-        return;
+        return None;
     }
-    let s = Scratch::new("softhsm");
+    let s = Scratch::new(name);
     let tokens = s.path("hsm");
     fs::create_dir_all(&tokens).unwrap();
     let conf = s.path("softhsm2.conf");
@@ -270,6 +272,14 @@ fn softhsm_token_is_served_and_signs_with_its_pin() {
         "--pin",
         "1234",
     ]);
+    Some((s, conf, softhsm, helper, client))
+}
+
+#[test]
+fn softhsm_token_is_served_and_signs_with_its_pin() {
+    let Some((s, conf, softhsm, helper, client)) = softhsm_token("softhsm") else {
+        return;
+    };
     write_driver(
         &s,
         "softhsm",
@@ -306,6 +316,73 @@ fn softhsm_token_is_served_and_signs_with_its_pin() {
         v15.status.success(),
         "PKCS#1 v1.5 signing failed:\n{}",
         text(&v15)
+    );
+    assert!(
+        !wrong_pin.status.success() && text(&wrong_pin).contains("C_Login failed"),
+        "a wrong PIN was accepted:\n{}",
+        text(&wrong_pin)
+    );
+}
+
+/// A driver with `usb = true` (as Feitian's ePass2003 library) is served by
+/// one `tessera shared` process that loads it once: the token is listed and
+/// signs, from several connections at once, and an app's C_Finalize does
+/// not end it for the next (src/shared.rs).
+#[test]
+fn usb_driver_is_served_by_one_process_to_every_connection() {
+    let Some((s, conf, softhsm, helper, client)) = softhsm_token("shared") else {
+        return;
+    };
+    write_driver(
+        &s,
+        "softhsm",
+        &softhsm,
+        &[("SOFTHSM2_CONF", conf.to_str().unwrap())],
+    );
+    let toml = s.path("drivers/softhsm/driver.toml");
+    let text = fs::read_to_string(&toml).unwrap();
+    fs::write(&toml, text.replacen("[env]", "usb = true\n[env]", 1)).unwrap();
+
+    let svc = Service::start(&s, &helper);
+    let published = svc.wait_published("softhsm", Duration::from_secs(30));
+    let socket = svc.sockets.join("softhsm");
+    let first = sign_through(&client, &socket, Some("1234"), "PSS");
+    let together: Vec<_> = (0..3)
+        .map(|_| {
+            let (c, k) = (client.clone(), socket.clone());
+            std::thread::spawn(move || sign_through(&c, &k, Some("1234"), "PSS"))
+        })
+        .collect();
+    let together: Vec<Output> = together.into_iter().map(|h| h.join().unwrap()).collect();
+    let after = sign_through(&client, &socket, Some("1234"), "RSA_PKCS (");
+    let wrong_pin = sign_through(&client, &socket, Some("0000"), "PSS");
+    let driver_log =
+        fs::read_to_string(s.path("data/tessera/logs/softhsm.log")).unwrap_or_default();
+    let log = svc.stop();
+
+    assert!(published, "never published; tessera serve said:\n{log}");
+    assert!(
+        driver_log.contains("tessera shared: serving"),
+        "not served by tessera shared:\n{driver_log}"
+    );
+    assert_eq!(
+        driver_log.matches("C_Initialize =").count(),
+        1,
+        "the driver was initialized more than once:\n{driver_log}"
+    );
+    let text = |o: &Output| String::from_utf8_lossy(&o.stderr).into_owned();
+    assert!(
+        first.status.success(),
+        "first signing failed:\n{}",
+        text(&first)
+    );
+    for o in &together {
+        assert!(o.status.success(), "signing at once failed:\n{}", text(o));
+    }
+    assert!(
+        after.status.success(),
+        "signing after failed:\n{}",
+        text(&after)
     );
     assert!(
         !wrong_pin.status.success() && text(&wrong_pin).contains("C_Login failed"),

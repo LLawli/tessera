@@ -10,6 +10,28 @@ use std::time::{Duration, Instant};
 
 /// How long one driver may take to list its tokens.
 const LIST_TIMEOUT: Duration = Duration::from_secs(10);
+/// For the drivers served by `tessera shared` (set_patient): Feitian's
+/// ePass2003 library takes 11 s to read the token the first time, and a
+/// connection waits for the call before it. Giving up on the listing no
+/// longer stops the driver in the middle of a USB transfer (only the
+/// listing's own process ends), so waiting longer costs nothing.
+const PATIENT_TIMEOUT: Duration = Duration::from_secs(60);
+
+static PATIENT: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// The drivers whose listing gets PATIENT_TIMEOUT (those with `usb`).
+pub fn set_patient(ids: Vec<String>) {
+    *PATIENT.lock().unwrap_or_else(|e| e.into_inner()) = ids;
+}
+
+fn timeout_for(id: &str) -> Duration {
+    let patient = PATIENT.lock().unwrap_or_else(|e| e.into_inner());
+    if patient.iter().any(|p| p == id) {
+        PATIENT_TIMEOUT
+    } else {
+        LIST_TIMEOUT
+    }
+}
 
 use crate::paths;
 
@@ -374,7 +396,18 @@ pub fn probe_sign(module: &str) -> i32 {
         if info.login_required() {
             match std::env::var("TESSERA_PIN") {
                 Ok(pin) => {
-                    if let Err(e) = session.login(UserType::User, Some(&AuthPin::from(pin))) {
+                    // Logged in already (by another app of the same
+                    // `tessera shared`): apps take that as success.
+                    if let Err(e) = session
+                        .login(UserType::User, Some(&AuthPin::from(pin)))
+                        .or_else(|e| match e {
+                            cryptoki::error::Error::Pkcs11(
+                                cryptoki::error::RvError::UserAlreadyLoggedIn,
+                                _,
+                            ) => Ok(()),
+                            e => Err(e),
+                        })
+                    {
                         eprintln!("sign: C_Login failed: {e}");
                         continue;
                     }
@@ -511,7 +544,7 @@ pub fn list_tokens_in_process(with_certs: bool) -> Result<String, String> {
 /// Read one driver's server in a child process (p11-kit-client takes its
 /// address from the environment, so each server gets its own process).
 fn tokens_of(id: &str, name: &str) -> Result<Vec<Token>, ReadError> {
-    tokens_at(&paths::driver_socket(id), name, true)
+    tokens_at(&paths::driver_socket(id), name, true, timeout_for(id))
 }
 
 /// Tokens served at a p11-kit server socket, read in a child process with
@@ -520,6 +553,7 @@ fn tokens_at(
     socket: &std::path::Path,
     name: &str,
     with_certs: bool,
+    limit: Duration,
 ) -> Result<Vec<Token>, ReadError> {
     let exe = std::env::current_exe().map_err(|e| Failed(e.to_string()))?;
     let mut cmd = Command::new(exe);
@@ -558,7 +592,7 @@ fn tokens_at(
     });
     // A driver that hangs (waiting for a reader, say) must not hang the
     // window: give up after a while.
-    let deadline = Instant::now() + LIST_TIMEOUT;
+    let deadline = Instant::now() + limit;
     loop {
         match child.try_wait().map_err(|e| Failed(e.to_string()))? {
             Some(_) => break,
@@ -634,7 +668,7 @@ fn protocol_at(socket: &std::path::Path) -> Option<u8> {
 /// holding one of Tessera's tokens (`ours`). None when the server does not
 /// answer or has none of them. Must run off the main thread.
 pub fn host_slot_of(ours: &[(String, String)], chosen: Option<&(String, String)>) -> Option<usize> {
-    let seen = tokens_at(&paths::host_p11kit_socket(), "", false).ok()?;
+    let seen = tokens_at(&paths::host_p11kit_socket(), "", false, LIST_TIMEOUT).ok()?;
     slot_of(&seen, ours, chosen)
 }
 
@@ -663,7 +697,7 @@ pub fn tessera_tokens() -> Vec<(String, String)> {
     };
     entries
         .flatten()
-        .filter_map(|e| tokens_at(&e.path(), "", false).ok())
+        .filter_map(|e| tokens_at(&e.path(), "", false, LIST_TIMEOUT).ok())
         .flatten()
         .map(|t| (t.label, t.serial))
         .collect()
@@ -678,7 +712,7 @@ pub fn host_view(ours: &[(String, String)]) -> HostView {
     if ours.is_empty() {
         return HostView::NothingToCheck;
     }
-    match tokens_at(&socket, "", false) {
+    match tokens_at(&socket, "", false, LIST_TIMEOUT) {
         Ok(seen) => {
             let seen: Vec<(String, String)> =
                 seen.into_iter().map(|t| (t.label, t.serial)).collect();

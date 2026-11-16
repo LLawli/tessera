@@ -9,6 +9,7 @@
 //!                               database DIR (a Firefox profile, say)
 //!   tessera probe-module MOD    load a driver directly and report each step
 //!   tessera remote ...          (internal) serve one connection for p11-kit server
+//!   tessera shared ...          (internal) serve every connection to a USB driver
 //!   tessera list-tokens         (internal) list tokens at P11_KIT_SERVER_ADDRESS
 //!   tessera nss-add-module DIR [MODULE]  (internal) the NSS work of nss-setup
 //!   tessera nss-poppler DIR      (internal) make the NSS database for Papers and Okular
@@ -29,6 +30,7 @@ mod serial;
 mod server;
 mod settings;
 mod setup;
+mod shared;
 mod signers;
 mod stable;
 mod status;
@@ -298,6 +300,7 @@ fn serve() -> ExitCode {
     eprintln!("tessera: serving in {}", paths::socket_dir().display());
     let mut last = usize::MAX;
     let mut health = Health::default();
+    status::set_patient(ds.iter().filter(|d| d.usb).map(|d| d.id.clone()).collect());
     loop {
         let running: Vec<(String, String)> = ds
             .iter()
@@ -428,6 +431,7 @@ fn main() -> ExitCode {
         Some("serve") => return serve(),
         Some("opensc") => return opensc_tool(&args[2..]),
         Some("remote") => return ExitCode::from(remote::run(&args[2..]) as u8),
+        Some("shared") => return ExitCode::from(shared::run(&args[2..]) as u8),
         Some("probe-sign") => {
             let Some(module) = args.get(2) else {
                 eprintln!("usage: tessera probe-sign MODULE");
