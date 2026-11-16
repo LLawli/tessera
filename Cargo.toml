@@ -20,6 +20,8 @@ ashpd = { version = "0.13", default-features = false, features = ["async-io", "b
 anyhow = "1"
 ksni = { version = "0.3.7", default-features = false, features = ["async-io", "blocking"] }
 async-channel = "2"
+sha2 = "0.10"
+sha1 = "0.10"
 
 [profile.release]
 lto = true

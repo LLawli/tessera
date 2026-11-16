@@ -462,6 +462,17 @@ pub fn probe_sign(module: &str) -> i32 {
             match session.sign(&mech, key, data) {
                 Ok(sig) => {
                     eprintln!("sign: OK, {} bytes in {:?}", sig.len(), started.elapsed());
+                    // For checking the signature elsewhere (tests/drivers.rs).
+                    if let Some(dir) = std::env::var_os("TESSERA_SIG_OUT") {
+                        let dir = std::path::Path::new(&dir);
+                        let file = if name.contains("PSS") {
+                            "pss.sig"
+                        } else {
+                            "pkcs.sig"
+                        };
+                        let _ = std::fs::write(dir.join(file), &sig);
+                        let _ = std::fs::write(dir.join("digest.bin"), digest);
+                    }
                     result = 0;
                 }
                 Err(e) => eprintln!("sign: failed after {:?}: {e}", started.elapsed()),

@@ -13,3 +13,8 @@ description = "ePass2003 formatted by Feitian's Windows software (as certificate
 module = "extra/libcastle.so.1.0.0"
 usb = true
 pcscd_ignore = "Feitian ePass2003"
+
+# The library lists RSA-PSS (what TLS 1.3 signs with) but its C_SignInit
+# fails; its raw RSA is right, so Tessera makes PSS with it (src/pss.rs).
+[env]
+TESSERA_PSS_VIA_RAW = "1"

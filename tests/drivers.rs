@@ -168,7 +168,21 @@ fn write_driver(s: &Scratch, id: &str, module: &Path, env: &[(&str, &str)]) {
 /// Sign through p11-kit-client.so connected to one driver's socket, as an
 /// app would through the host's server.
 fn sign_through(client: &Path, socket: &Path, pin: Option<&str>, mech: &str) -> Output {
+    sign_through_saving(client, socket, pin, mech, None)
+}
+
+/// sign_through, writing the signature and the signed hash to `out`.
+fn sign_through_saving(
+    client: &Path,
+    socket: &Path,
+    pin: Option<&str>,
+    mech: &str,
+    out: Option<&Path>,
+) -> Output {
     let mut cmd = Command::new(TESSERA);
+    if let Some(out) = out {
+        cmd.env("TESSERA_SIG_OUT", out);
+    }
     cmd.arg("probe-sign")
         .arg(client)
         .env(
@@ -327,7 +341,9 @@ fn softhsm_token_is_served_and_signs_with_its_pin() {
 /// A driver with `usb = true` (as Feitian's ePass2003 library) is served by
 /// one `tessera shared` process that loads it once: the token is listed and
 /// signs, from several connections at once, and an app's C_Finalize does
-/// not end it for the next (src/shared.rs).
+/// not end it for the next (src/shared.rs). With TESSERA_PSS_VIA_RAW=1, as
+/// the ePass2003's, its RSA-PSS signatures are made with raw RSA
+/// (src/pss.rs), and OpenSSL verifies them with the key.
 #[test]
 fn usb_driver_is_served_by_one_process_to_every_connection() {
     let Some((s, conf, softhsm, helper, client)) = softhsm_token("shared") else {
@@ -337,7 +353,10 @@ fn usb_driver_is_served_by_one_process_to_every_connection() {
         &s,
         "softhsm",
         &softhsm,
-        &[("SOFTHSM2_CONF", conf.to_str().unwrap())],
+        &[
+            ("SOFTHSM2_CONF", conf.to_str().unwrap()),
+            ("TESSERA_PSS_VIA_RAW", "1"),
+        ],
     );
     let toml = s.path("drivers/softhsm/driver.toml");
     let text = fs::read_to_string(&toml).unwrap();
@@ -346,7 +365,9 @@ fn usb_driver_is_served_by_one_process_to_every_connection() {
     let svc = Service::start(&s, &helper);
     let published = svc.wait_published("softhsm", Duration::from_secs(30));
     let socket = svc.sockets.join("softhsm");
-    let first = sign_through(&client, &socket, Some("1234"), "PSS");
+    let sigs = s.path("sigs");
+    fs::create_dir_all(&sigs).unwrap();
+    let first = sign_through_saving(&client, &socket, Some("1234"), "PSS", Some(&sigs));
     let together: Vec<_> = (0..3)
         .map(|_| {
             let (c, k) = (client.clone(), socket.clone());
@@ -383,6 +404,33 @@ fn usb_driver_is_served_by_one_process_to_every_connection() {
         after.status.success(),
         "signing after failed:\n{}",
         text(&after)
+    );
+    assert!(
+        driver_log.contains("RSA-PSS signatures made with the driver's raw RSA"),
+        "PSS not taken over:\n{driver_log}"
+    );
+    let verify = Command::new("openssl")
+        .args(["pkeyutl", "-verify", "-inkey"])
+        .arg(s.path("key.pem"))
+        .args([
+            "-pkeyopt",
+            "rsa_padding_mode:pss",
+            "-pkeyopt",
+            "rsa_pss_saltlen:32",
+            "-pkeyopt",
+            "digest:sha256",
+            "-in",
+        ])
+        .arg(sigs.join("digest.bin"))
+        .arg("-sigfile")
+        .arg(sigs.join("pss.sig"))
+        .output()
+        .unwrap();
+    assert!(
+        verify.status.success(),
+        "OpenSSL did not verify the PSS signature: {}{}",
+        String::from_utf8_lossy(&verify.stdout),
+        String::from_utf8_lossy(&verify.stderr)
     );
     assert!(
         !wrong_pin.status.success() && text(&wrong_pin).contains("C_Login failed"),

@@ -358,6 +358,12 @@ pub fn run(args: &[String]) -> i32 {
             Some(serial) => crate::serial::wrap(served, serial),
             None => served,
         };
+        // PSS made with raw RSA, for drivers that fail it (see pss.rs).
+        let served = if crate::pss::wanted() {
+            crate::pss::wrap(served)
+        } else {
+            served
+        };
         let served = if std::env::var("TESSERA_REMOTE_TRACE").as_deref() == Ok("1") {
             crate::trace::wrap(served)
         } else {

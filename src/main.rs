@@ -25,6 +25,7 @@ mod masterpdf;
 mod native;
 mod nss;
 mod paths;
+mod pss;
 mod remote;
 mod serial;
 mod server;

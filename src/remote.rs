@@ -17,7 +17,8 @@
 //! *Init call that passed them (see stable.rs): SerproID needs that.
 //!
 //! With TESSERA_TOKEN_SERIAL set, the driver's tokens report that serial
-//! number (see serial.rs).
+//! number (see serial.rs). With TESSERA_PSS_VIA_RAW=1, RSA-PSS signatures
+//! are made with the driver's raw RSA (see pss.rs).
 //!
 //! TESSERA_REMOTE_LOAD=raw serves the driver's own function list (dlopen +
 //! C_GetFunctionList) instead of p11-kit's managed wrapper around it.
@@ -191,6 +192,12 @@ pub fn run(args: &[String]) -> i32 {
         {
             Some(serial) => crate::serial::wrap(served, serial),
             None => served,
+        };
+        // PSS made with raw RSA, for drivers that fail it (see pss.rs).
+        let served = if crate::pss::wanted() {
+            crate::pss::wrap(served)
+        } else {
+            served
         };
         let served = if std::env::var("TESSERA_REMOTE_TRACE").as_deref() == Ok("1") {
             crate::trace::wrap(served)
