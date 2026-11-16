@@ -51,6 +51,17 @@
     <display_length compare="ge">360</display_length>
   </requires>
   <releases>
+    <release version="0.4.5" date="2026-11-16">
+      <description>
+        <p>Feitian's ePass2003, as certificate authorities deliver it.</p>
+        <ul>
+          <li>A new driver extension, ePass2003 (Feitian), for the ePass2003 formatted by Feitian's Windows software, which OpenSC does not read. It needs two one-time steps, shown with their commands on the Drivers page: letting Tessera reach the USB devices, and making the system's card service leave the token to the driver.</li>
+          <li>A driver that talks to its token over USB itself is loaded once and shared by every app, instead of once per connection.</li>
+          <li>RSA-PSS signatures, which TLS 1.3 needs, are made with the token's raw RSA for drivers whose own PSS fails, as the ePass2003's does.</li>
+          <li>OpenSC is no longer named as the ePass2003's driver.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.4" date="2026-11-15">
       <description>
         <p>A Flatpak that was uninstalled no longer gets in the way.</p>
