@@ -60,7 +60,7 @@ Each driver's environment comes from the `[env]` of its `driver.toml` (for examp
 
 ### One process for a USB driver
 
-A driver whose `driver.toml` says `usb = true` (Feitian's ePass2003 library) talks to its token over USB itself, not through pcscd. A process per connection would have each app, and each listing, load it anew, and two processes would hold the same USB device. So its server is `tessera shared --socket … --provider …` (`src/shared.rs`), one process that:
+A driver whose `driver.toml` says `usb = true` (Feitian's ePass2003 library) talks to its token over USB itself, not through pcscd. What follows also serves a driver that says `shared = true` (OpenSC, whose cards can be slow to open), without the USB part. A process per connection would have each app, and each listing, load it anew, and two processes would hold the same USB device. So its server is `tessera shared --socket … --provider …` (`src/shared.rs`), one process that:
 
 - loads and initializes the driver once, and reads its tokens once at start (warm-up), with timings in the driver's log;
 - serves each connection on a thread of its own (named `tessera-conn`, which is how supervision tells an app is connected), through the same `p11_kit_remote_serve_tokens` as `tessera remote`, with the same wrappers (`stable`, `serial`, `pss`, `trace`);

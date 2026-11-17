@@ -1,6 +1,7 @@
 //! `tessera shared --socket PATH --provider MODULE`: one process that loads
 //! a driver once and serves every connection to its socket, for the drivers
-//! with `usb = true` (drivers.rs) instead of `p11-kit server`.
+//! with `usb = true` or `shared = true` (drivers.rs) instead of
+//! `p11-kit server`.
 //!
 //! Why: p11-kit server starts a process per connection, each loading the
 //! driver anew. Feitian's ePass2003 library talks to the token over USB

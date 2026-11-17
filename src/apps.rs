@@ -473,6 +473,7 @@ mod tests {
             pcscd_ignore: None,
             usb_id: None,
             patient: false,
+            shared: false,
         };
         let with = host_module_contents(&d, true);
         assert!(with.contains("remote: unix:path="));

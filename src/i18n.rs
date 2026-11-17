@@ -173,7 +173,7 @@ const PT_BR: &[(&str, &str)] = &[
     ("Serpro's cloud certificate (no token to connect)", "certificado em nuvem do Serpro (sem token para conectar)"),
     ("Certisign's cloud certificate, independent driver (no token to connect)", "certificado em nuvem da Certisign, driver independente (sem token para conectar)"),
     ("Experimental", "Experimental"),
-    ("ePass2003 formatted by Feitian's Windows software, as certificate authorities deliver it", "ePass2003 formatado pelo programa da Feitian para Windows, como as certificadoras entregam"),
+    ("ePass2003 formatted by Feitian's software, as certificate authorities deliver it", "ePass2003 formatado pelo programa da Feitian, como as certificadoras entregam"),
     ("Waiting for the one-time setup below", "Aguardando a configuração única abaixo"),
     ("One-time setup: USB", "Configuração única: USB"),
     ("Undo the setup: the card service", "Desfazer a configuração: o serviço de cartões"),

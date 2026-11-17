@@ -160,7 +160,7 @@ fn spawn(driver: &Driver, env: &BTreeMap<String, String>) -> Result<Child> {
         let _ = fs::remove_file(&socket);
     }
     let log = File::create(log_path(&driver.id))?;
-    let mut cmd = if driver.usb {
+    let mut cmd = if driver.shared {
         let mut c = Command::new(std::env::current_exe().context("finding Tessera")?);
         c.arg("shared").arg("--socket").arg(&socket);
         c.arg("--provider").arg(&driver.module);
@@ -577,6 +577,7 @@ mod tests {
             pcscd_ignore: None,
             usb_id: None,
             patient: false,
+            shared: false,
         }
     }
 

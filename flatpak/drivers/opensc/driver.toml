@@ -8,6 +8,11 @@ module = "../../../opensc-pkcs11.so"
 # A card can take long to read the first time (an ePass2003 with five
 # certificates: 19 s); after that its public files come from the cache.
 patient = true
+# One process for every app (src/shared.rs): with a process per connection,
+# Firefox, the window's listings and `tessera status` each opened the card
+# anew and waited for each other (six at once with an ePass2003; Firefox
+# hung and the listing ran out of time).
+shared = true
 
 [env]
 # Tessera's own configuration (next to this file), the same in both

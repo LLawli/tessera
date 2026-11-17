@@ -338,6 +338,52 @@ fn softhsm_token_is_served_and_signs_with_its_pin() {
     );
 }
 
+/// `shared = true` alone (as OpenSC's driver.toml) also gets the one
+/// `tessera shared` process, with none of the USB setup: the driver is
+/// initialized once however many apps connect.
+#[test]
+fn shared_driver_without_usb_is_served_by_one_process() {
+    let Some((s, conf, softhsm, helper, client)) = softhsm_token("sharedonly") else {
+        return;
+    };
+    write_driver(
+        &s,
+        "softhsm",
+        &softhsm,
+        &[("SOFTHSM2_CONF", conf.to_str().unwrap())],
+    );
+    let toml = s.path("drivers/softhsm/driver.toml");
+    let text = fs::read_to_string(&toml).unwrap();
+    fs::write(&toml, text.replacen("[env]", "shared = true\n[env]", 1)).unwrap();
+
+    let svc = Service::start(&s, &helper);
+    let published = svc.wait_published("softhsm", Duration::from_secs(30));
+    let socket = svc.sockets.join("softhsm");
+    let first = sign_through(&client, &socket, Some("1234"), "RSA_PKCS (");
+    let second = sign_through(&client, &socket, Some("1234"), "RSA_PKCS (");
+    let driver_log =
+        fs::read_to_string(s.path("data/tessera/logs/softhsm.log")).unwrap_or_default();
+    let log = svc.stop();
+
+    assert!(published, "never published; tessera serve said:\n{log}");
+    assert!(
+        driver_log.contains("tessera shared: serving"),
+        "not served by tessera shared:\n{driver_log}"
+    );
+    assert_eq!(
+        driver_log.matches("C_Initialize =").count(),
+        1,
+        "the driver was initialized more than once:\n{driver_log}"
+    );
+    for o in [&first, &second] {
+        assert!(
+            o.status.success(),
+            "signing failed:\n{}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+    }
+}
+
 /// A driver with `usb = true` (as Feitian's ePass2003 library) is served by
 /// one `tessera shared` process that loads it once: the token is listed and
 /// signs, from several connections at once, and an app's C_Finalize does

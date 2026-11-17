@@ -2,7 +2,7 @@
 //! copied command (Tessera changes nothing outside its sandbox).
 //!
 //! A driver that talks to its token over USB itself, without pcscd (Feitian's
-//! for the ePass2003 formatted by its Windows software), needs two things:
+//! for the ePass2003 formatted by its own software), needs two things:
 //!
 //! - **USB**: Tessera sees the USB devices only when the user grants it
 //!   (`flatpak override --user --device=usb`, or `--device=all` before
@@ -230,6 +230,7 @@ mod tests {
             pcscd_ignore: Some("Feitian ePass2003".into()),
             usb_id: Some("096e:0807".into()),
             patient: false,
+            shared: false,
         };
         let listed = vec!["Feitian ePass2003 00 00".to_string()];
         std::env::set_var("TESSERA_TEST_USB_IDS", "046d:0825;096E:0807");

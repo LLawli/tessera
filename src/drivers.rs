@@ -31,7 +31,8 @@
 //! A driver that talks to its token over USB itself, not through pcscd,
 //! says so (`usb_id = "vvvv:pppp"` names the token, to offer undoing the
 //! setup once the driver is off; `patient = true`, for any driver, gives its
-//! listing a minute instead of ten seconds): `usb = true` (Tessera needs the USB devices, a permission the
+//! listing a minute instead of ten seconds; `shared = true` has it served by
+//! one process for every app, as the `usb` ones are): `usb = true` (Tessera needs the USB devices, a permission the
 //! user grants) and `pcscd_ignore = "<reader name>"` (the system's pcscd
 //! must leave that reader alone, or both talk to the token at once and it
 //! hangs). Until both are done the driver is not served (setup.rs).
@@ -80,6 +81,8 @@ struct DriverFile {
     usb_id: Option<String>,
     #[serde(default)]
     patient: bool,
+    #[serde(default)]
+    shared: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -112,6 +115,11 @@ pub struct Driver {
     /// Its listing may take long (status.rs): a card read slowly, as OpenSC
     /// reads an ePass2003 the first time (19 s).
     pub patient: bool,
+    /// Served by one `tessera shared` process for every app (shared.rs)
+    /// instead of a process per connection: a driver with `usb`, or one
+    /// whose cards are slow to open (OpenSC and an ePass2003: six
+    /// connections, six processes reading the token in a queue).
+    pub shared: bool,
 }
 
 impl Driver {
@@ -228,6 +236,7 @@ fn load_one(dir: &Path) -> Result<Driver> {
             .map(|s| s.trim().to_lowercase())
             .filter(|s| !s.is_empty()),
         patient: d.patient || d.usb,
+        shared: d.shared || d.usb,
     })
 }
 

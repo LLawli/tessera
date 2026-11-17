@@ -78,14 +78,14 @@ pub const KNOWN: &[Known] = &[
         atr_bytes: &[],
         experimental: true,
     },
-    // Feitian's own library, for the ePass2003 formatted by its Windows
+    // Feitian's own library, for the ePass2003 formatted by its own
     // software (OpenSC reads only the ones it formats). No reader words:
     // the reader is the same either way, and OpenSC is the default.
     Known {
         id: "epass2003",
         name: "ePass2003 (Feitian)",
         vendor: "Feitian",
-        tokens: "ePass2003 formatted by Feitian's Windows software, as certificate authorities deliver it",
+        tokens: "ePass2003 formatted by Feitian's software, as certificate authorities deliver it",
         extension: "io.github.pedrohqb.Tessera.Driver.ePass2003",
         reader_words: &[],
         atr_bytes: &[],

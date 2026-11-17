@@ -82,6 +82,15 @@ fn print_status() -> ExitCode {
             catalog::install_command(k)
         );
     }
+    // The limit the service gives each driver's listing (a minute for the
+    // patient ones): with ten seconds, a card OpenSC was still reading
+    // showed here as no token at all.
+    status::set_patient(
+        ds.iter()
+            .filter(|d| d.patient)
+            .map(|d| d.id.clone())
+            .collect(),
+    );
     let snap = status::snapshot(&answering);
     println!("\nReaders:");
     match &snap.readers {
