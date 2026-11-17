@@ -11,9 +11,9 @@ USB token ──► pcscd (system)
 │   $XDG_RUNTIME_DIR/tessera/safesign  ◄─ libaetpkss │
 │   $XDG_RUNTIME_DIR/tessera/safenet   ◄─ libeToken  │
 │   $XDG_RUNTIME_DIR/tessera/serproid  ◄─ libserproidp11 ──► Serpro cloud
-│   $XDG_RUNTIME_DIR/tessera/opensc    ◄─ opensc-pkcs11 │
 │ each connection is handled by `tessera remote`     │
-│ USB drivers: one `tessera shared` instead:          │
+│ shared drivers: one `tessera shared` instead:       │
+│   $XDG_RUNTIME_DIR/tessera/opensc    ◄─ opensc-pkcs11 │
 │   $XDG_RUNTIME_DIR/tessera/epass2003 ◄─ libcastle ──► USB (own access)
 │     (needs --device=usb, given by the user)        │
 └────────────────────────────────────────────────────┘
@@ -29,7 +29,7 @@ USB token ──► pcscd (system)
    PJeOffice Pro · Firefox · Chromium · Chrome · Edge · Brave · Papers · Okular
 ```
 
-1. Tessera starts one p11-kit server for each enabled driver, each with its own socket in `$XDG_RUNTIME_DIR/tessera/<driver>` (for a driver that talks to its token over USB itself, `tessera shared` instead: [below](#one-process-for-a-usb-driver)).
+1. Tessera starts one p11-kit server for each enabled driver, each with its own socket in `$XDG_RUNTIME_DIR/tessera/<driver>` (for OpenSC and for a driver that talks to its token over USB itself, `tessera shared` instead: [below](#one-process-for-a-usb-driver)).
 2. For each driver that answers, it writes the file `~/.config/pkcs11/modules/tessera-<driver>.module` on the system, with a single meaningful line: `remote: unix:path=/run/user/<uid>/tessera/<driver>`. This way the system's p11-kit starts including these tokens among its modules.
 3. The system's own p11-kit server (`p11-kit-server.socket`, activated once by the user; on Debian and Ubuntu, which ship no units for it, a plain user service at the same path) serves all of this at `$XDG_RUNTIME_DIR/p11-kit/pkcs11`: the system trust, the system modules and Tessera's drivers.
 4. A Flatpak app that is given `--filesystem=xdg-run/p11-kit/pkcs11` finds that socket in the same place and uses it through the runtime's `p11-kit-client.so`. Native apps see it through `p11-kit-proxy.so`.
@@ -133,7 +133,7 @@ What Tessera protects against, what it does not, and why.
 
 **Sandboxed apps.** A Flatpak app reaches the tokens only after step 1 (`--filesystem=xdg-run/p11-kit/pkcs11`), which the user grants per app. An app without it does not see the system's p11-kit server, and so no token.
 
-**The drivers.** The vendors' drivers are closed source. They run inside Tessera's sandbox, one process per connection (one for all, for a USB driver), with Tessera's permissions only (the list above; a Flatpak extension has none of its own): they do not see the home folder, and nothing of theirs is installed on the system. A native install, by contrast, runs the vendors' install scripts as root and loads their libraries into every app that uses the token.
+**The drivers.** The vendors' drivers are closed source. They run inside Tessera's sandbox, one process per connection (one for all, for OpenSC and a USB driver), with Tessera's permissions only (the list above; a Flatpak extension has none of its own): they do not see the home folder, and nothing of theirs is installed on the system. A native install, by contrast, runs the vendors' install scripts as root and loads their libraries into every app that uses the token.
 
 **The web signers.** Web PKI and the WebSigners are closed source too, and run in each browser's sandbox, not Tessera's, with that browser's permissions plus what their command adds: read access to the extension's own folder, a data folder in the browser's own, and, in Firefox, X11. They reach the tokens as the browser does, and ask for the PIN in their own dialog. The vendors' packages, by contrast, put their manifests in the system's browser folders and run their install scripts as root.
 

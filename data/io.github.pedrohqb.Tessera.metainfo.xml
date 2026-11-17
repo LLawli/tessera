@@ -51,6 +51,17 @@
     <display_length compare="ge">360</display_length>
   </requires>
   <releases>
+    <release version="0.4.6" date="2026-11-17">
+      <description>
+        <p>The ePass2003 in the free format, formatted by OpenSC.</p>
+        <ul>
+          <li>OpenSC is loaded once and shared by every app, instead of once per connection: with a card that is slow to open, as the ePass2003 formatted by OpenSC, browsers hung and the token was not listed.</li>
+          <li>OpenSC keeps a card's certificates on disk after the first read, and its listing has a minute instead of ten seconds.</li>
+          <li>The Drivers page names the Feitian ePass2003 in the free format under OpenSC. The one certificate authorities deliver, formatted by Feitian's software, still needs the ePass2003 (Feitian) extension; one computer serves one format at a time.</li>
+          <li>A driver that is switched off shows the commands that undo what is left of its one-time setup, so that OpenSC can see an ePass2003 again.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.5" date="2026-11-16">
       <description>
         <p>Feitian's ePass2003, as certificate authorities deliver it.</p>

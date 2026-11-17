@@ -13,8 +13,8 @@ src/
     supervise.rs  supervision with or without the window, the tray and the background status
   server.rs     one p11-kit-server per driver (process group, PDEATHSIG, restart)
   remote.rs     `tessera remote`: the process that loads the driver on each connection
-  shared.rs     `tessera shared`: one process that loads a USB driver once and serves every connection
-  setup.rs      a USB driver's one-time setup: the USB devices, pcscd leaving its reader (the commands)
+  shared.rs     `tessera shared`: one process that loads a driver once and serves every connection (`usb` or `shared`)
+  setup.rs      a USB driver's one-time setup: the USB devices, pcscd leaving its reader (the commands), and undoing it
   pss.rs        RSA-PSS made with the driver's raw RSA (TESSERA_PSS_VIA_RAW; the ePass2003's)
   stable.rs     stable copy of the mechanism parameters (the SerproID defect)
   serial.rs     the token serial a driver reports (TESSERA_TOKEN_SERIAL; SerproID's)
@@ -118,7 +118,8 @@ To test outside Flatpak, use a regular user: as root, p11-kit ignores the user c
   - a SoftHSM token with an RSA key: published to the host modules folder, signs with PSS and PKCS#1 v1.5 with its PIN, and refuses a wrong PIN;
   - `tests/fake-driver/keeps-mechanism-pointer.c`, which behaves like SerproID: signs PSS only because `stable.rs` hands it parameters that are still valid in `C_Sign` (without that copy the test fails, with `hash=<garbage> -> WRONG` in the driver's log);
   - `tests/fake-driver/slow-slot-list.c`: never published, and its first timeout reported;
-  - the SoftHSM token as a USB driver (`usb = true`, `TESSERA_PSS_VIA_RAW=1`): served by one `tessera shared`, initialized once, signs four times (three at once), refuses a wrong PIN, and its PSS signature, made with raw RSA, is verified by OpenSSL with the key.
+  - the SoftHSM token as a USB driver (`usb = true`, `TESSERA_PSS_VIA_RAW=1`): served by one `tessera shared`, initialized once, signs four times (three at once), refuses a wrong PIN, and its PSS signature, made with raw RSA, is verified by OpenSSL with the key;
+  - the SoftHSM token with `shared = true` alone (as OpenSC's `driver.toml`): one `tessera shared`, initialized once for two connections.
 
   They need softhsm2, openssl, a C compiler, p11-kit's server helper, client module and headers (on Ubuntu: `softhsm2 p11-kit p11-kit-modules libp11-kit-dev libnss3 openssl gcc`). Without them, a test is skipped with a message.
 - **By hand, the full path with SoftHSM:** start a `p11-kit-server` with `P11_KIT_PRIVATEDIR` pointing to a `p11-kit-remote` that runs `target/debug/tessera remote "$@"`, and sign with `scripts/sign-test.py` through `p11-kit-client.so` and `P11_KIT_SERVER_ADDRESS`. With the environment variable `PIN=1234`, the script logs in to SoftHSM.
