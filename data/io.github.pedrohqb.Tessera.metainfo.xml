@@ -51,6 +51,14 @@
     <display_length compare="ge">360</display_length>
   </requires>
   <releases>
+    <release version="0.4.8" date="2026-11-17">
+      <description>
+        <p>Undoing the ePass2003 (Feitian) driver's setup.</p>
+        <ul>
+          <li>With that driver switched off, the Drivers page did not offer the command that makes the card service see the token again, needed for an ePass2003 formatted by OpenSC. It does now, with the extension as already installed, and also with the token unplugged.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.7" date="2026-11-17">
       <description>
         <p>PJeOffice signs with OpenSC's tokens.</p>

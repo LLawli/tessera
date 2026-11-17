@@ -551,6 +551,7 @@ pub(super) fn update_drivers(hub: &Hub, win: &Win) {
             row.set_visible(match step {
                 Step::Do(need) => !off && setup::unmet(d, &readers).contains(need),
                 Step::Undo(need) => off && setup::leftover(d, &readers).contains(need),
+                Step::MaybeUndo(_) => off && setup::pcscd_left(d, &readers) == setup::Left::Unknown,
             });
         }
     }
@@ -642,7 +643,21 @@ fn setup_rows(win: &Rc<Win>, d: &drivers::Driver) -> Vec<(crate::setup::Step, ad
         out.push((Step::Do(Need::PcscdIgnore(reader.clone())), row));
     }
     // With the driver switched off: what is left of its setup, to undo.
-    if let (Some(reader), Some(_)) = (&d.pcscd_ignore, &d.usb_id) {
+    if let Some(reader) = &d.pcscd_ignore {
+        // Tessera cannot tell (the token is not plugged in): the command is
+        // offered all the same, so that it is never missing.
+        let row = plain_row(
+            &format!("{} · {}", d.name, t("Undo the setup: the card service")),
+            t("This driver is off. If you did its one-time setup, the system's card service (pcscd) still leaves its token alone, and no other driver sees it (OpenSC, for an ePass2003 formatted by OpenSC). To give the token back, copy the command and run it in a terminal (it asks for your password). With the token plugged in, Tessera tells whether this is still needed."),
+            "dialog-information-symbolic",
+        );
+        row.add_suffix(&copy_button_with(
+            win,
+            setup::pcscd_undo_command(reader),
+            t("Copy the command that gives the token back to the card service"),
+        ));
+        row.set_visible(false);
+        out.push((Step::MaybeUndo(Need::PcscdIgnore(reader.clone())), row));
         let row = plain_row(
             &format!("{} · {}", d.name, t("Undo the setup: the card service")),
             t("This driver is off, but the system's card service (pcscd) still leaves its token alone, so no other driver sees it (OpenSC, for an ePass2003 formatted by OpenSC). To give the token back, copy the command and run it in a terminal (it asks for your password). Switching this driver on again will ask for the setup again."),

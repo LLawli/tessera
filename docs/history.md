@@ -120,3 +120,7 @@ The README and the documentation follow the window's pages, with a new screensho
 ## 0.4.7 (November 17)
 
 66. **PJeOffice and OpenSC's tokens.** With the ePass2003 in the free format, Firefox signed and PJeOffice said "Supplied key (sun.security.pkcs11.P11Key$P11PrivateKey) is not a RSAPrivateKey instance". The trace showed the login and the keys read, and then no `C_SignInit`: the refusal was inside Java. OpenSC reports its RSA mechanisms as signing, verifying and decrypting, without encrypting, and Java's SunPKCS11 drops such a mechanism whole (JDK-8176837), so `NONEwithRSA` went to BouncyCastle, which cannot use a token's key. Tessera now adds the encrypt flag to what OpenSC's mechanisms report (`TESSERA_ENCRYPT_FLAG`, `src/mechflags.rs`). It holds for every OpenSC card in a Java app, not only this token; the ePass2003 formatted by Feitian's software never showed it, since its library reports the mechanisms otherwise.
+
+## 0.4.8 (November 17)
+
+67. **The undo row that did not show.** With the ePass2003 (Feitian) driver off, pcscd's drop-in in place and the token plugged in, the Drivers page offered nothing: the row needed `usb_id` in the extension's `driver.toml`, and the extension on FlatPark did not have it yet. A function of Tessera's should not wait for an extension to be updated: the token's USB id is now also in Tessera's own list of known drivers. And since Tessera cannot see the drop-in itself, with the token unplugged the row is now shown anyway, worded as "if you did its one-time setup", instead of being hidden.

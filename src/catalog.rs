@@ -25,6 +25,11 @@ pub struct Known {
     atr_bytes: &'static [&'static [u8]],
     /// Still being tried out: the window marks it "Experimental".
     pub experimental: bool,
+    /// Its token's USB id, "vvvv:pppp", for a driver that needs pcscd to
+    /// skip its reader: used when the installed extension's driver.toml
+    /// has no `usb_id` (the ePass2003's first release), to tell that the
+    /// setup is still in place once the driver is off (setup.rs).
+    usb_id: Option<&'static str>,
 }
 
 pub const KNOWN: &[Known] = &[
@@ -39,6 +44,7 @@ pub const KNOWN: &[Known] = &[
         // chips; "sfte": SafeSign's own applet.
         atr_bytes: &[b"SCE6", b"SCE7", b"sfte"],
         experimental: false,
+        usb_id: None,
     },
     Known {
         id: "safenet",
@@ -54,6 +60,7 @@ pub const KNOWN: &[Known] = &[
             &[0x80, 0x73, 0xC8, 0x21, 0x10],
         ],
         experimental: false,
+        usb_id: None,
     },
     Known {
         id: "serproid",
@@ -64,6 +71,7 @@ pub const KNOWN: &[Known] = &[
         reader_words: &[],
         atr_bytes: &[],
         experimental: false,
+        usb_id: None,
     },
     // An independent driver (GPL-3.0, github.com/LLawli/RemoteID-linux),
     // not Certisign's own, packaged on FlatPark by its developer (see
@@ -77,6 +85,7 @@ pub const KNOWN: &[Known] = &[
         reader_words: &[],
         atr_bytes: &[],
         experimental: true,
+        usb_id: None,
     },
     // Feitian's own library, for the ePass2003 formatted by its own
     // software (OpenSC reads only the ones it formats). No reader words:
@@ -90,8 +99,14 @@ pub const KNOWN: &[Known] = &[
         reader_words: &[],
         atr_bytes: &[],
         experimental: false,
+        usb_id: Some("096e:0807"),
     },
 ];
+
+/// The USB id of the token of the known driver `id`, if it has one.
+pub fn usb_id(id: &str) -> Option<&'static str> {
+    KNOWN.iter().find(|k| k.id == id).and_then(|k| k.usb_id)
+}
 
 /// The known driver with this id, installed or not.
 pub fn known(id: &str) -> Option<&'static Known> {
@@ -170,6 +185,15 @@ fn installation_of(app_path: &str, user_data: &std::path::Path) -> Option<bool> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The ePass2003's token is known by its USB id even when the
+    /// extension's driver.toml does not say it.
+    #[test]
+    fn the_epass2003_token_is_known_by_its_usb_id() {
+        assert_eq!(usb_id("epass2003"), Some("096e:0807"));
+        assert_eq!(usb_id("safesign"), None);
+        assert_eq!(usb_id("nothing"), None);
+    }
 
     #[test]
     fn tokens_are_recognized_by_reader_or_atr() {

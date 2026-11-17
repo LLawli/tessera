@@ -34,7 +34,41 @@ pub enum Need {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Step {
     Do(Need),
+    /// Left over for sure.
     Undo(Need),
+    /// Maybe left over: Tessera cannot tell.
+    MaybeUndo(Need),
+}
+
+/// Whether something of a driver's setup is still in place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Left {
+    Yes,
+    No,
+    /// Nothing to tell it by: the token is not plugged in, or the driver
+    /// names none (`usb_id`). The sandbox does not see /etc, where the
+    /// drop-in is.
+    Unknown,
+}
+
+/// Whether pcscd still skips the reader of `d` (which names one):
+/// - the token plugged in and no such reader listed: yes;
+/// - the token plugged in and its reader listed: no;
+/// - otherwise, unknown.
+pub fn pcscd_left(d: &Driver, readers: &[String]) -> Left {
+    let Some(reader) = &d.pcscd_ignore else {
+        return Left::No;
+    };
+    match &d.usb_id {
+        Some(id) if usb_present(id) => {
+            if pcscd_lists(reader, readers) {
+                Left::No
+            } else {
+                Left::Yes
+            }
+        }
+        _ => Left::Unknown,
+    }
 }
 
 /// Tessera sees the USB devices (outside a Flatpak, always).
@@ -145,10 +179,8 @@ pub fn leftover(d: &Driver, readers: &[String]) -> Vec<Need> {
     if d.usb && paths::in_flatpak() && usb_visible() {
         out.push(Need::Usb);
     }
-    if let (Some(r), Some(id)) = (&d.pcscd_ignore, &d.usb_id) {
-        if usb_present(id) && !pcscd_lists(r, readers) {
-            out.push(Need::PcscdIgnore(r.clone()));
-        }
+    if let (Some(r), Left::Yes) = (&d.pcscd_ignore, pcscd_left(d, readers)) {
+        out.push(Need::PcscdIgnore(r.clone()));
     }
     out
 }
@@ -239,8 +271,15 @@ mod tests {
             vec![Need::PcscdIgnore("Feitian ePass2003".into())]
         );
         assert!(leftover(&d, &listed).is_empty());
+        assert_eq!(pcscd_left(&d, &[]), Left::Yes);
+        assert_eq!(pcscd_left(&d, &listed), Left::No);
+        // Unplugged, or with no id to know the token by: it cannot tell.
         std::env::set_var("TESSERA_TEST_USB_IDS", "046d:0825");
         assert!(leftover(&d, &[]).is_empty());
+        assert_eq!(pcscd_left(&d, &[]), Left::Unknown);
+        let mut nameless = d.clone();
+        nameless.usb_id = None;
+        assert_eq!(pcscd_left(&nameless, &listed), Left::Unknown);
         std::env::remove_var("TESSERA_TEST_USB_IDS");
         assert!(usb_undo_command().ends_with(paths::APP_ID));
     }

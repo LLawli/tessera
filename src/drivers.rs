@@ -214,6 +214,8 @@ fn load_one(dir: &Path) -> Result<Driver> {
         })
         .collect();
     let env = with_defaults(&id, env_map(dir, d.env));
+    // The first release of the ePass2003 extension has no `usb_id`.
+    let known_usb_id = crate::catalog::usb_id(&id).map(str::to_string);
     Ok(Driver {
         id,
         name: d.name,
@@ -234,7 +236,8 @@ fn load_one(dir: &Path) -> Result<Driver> {
         usb_id: d
             .usb_id
             .map(|s| s.trim().to_lowercase())
-            .filter(|s| !s.is_empty()),
+            .filter(|s| !s.is_empty())
+            .or(known_usb_id),
         patient: d.patient || d.usb,
         shared: d.shared || d.usb,
     })

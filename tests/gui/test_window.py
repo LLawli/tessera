@@ -223,6 +223,14 @@ def make_usb_driver(drivers):
         f'name = "Off demo"\nmodule = "{trust}"\n'
         'pcscd_ignore = "Hidden Reader"\nusb_id = "aaaa:bbbb"\n'
     )
+    # And one switched off whose token is not plugged in: Tessera cannot
+    # tell, and offers the command all the same.
+    d = drivers / "MaybeDemo"
+    d.mkdir(parents=True)
+    (d / "driver.toml").write_text(
+        f'name = "Maybe demo"\nmodule = "{trust}"\n'
+        'pcscd_ignore = "Other Reader"\nusb_id = "cccc:dddd"\n'
+    )
 
 
 def expected_pjeoffice_library():
@@ -286,7 +294,7 @@ def main():
     make_usb_driver(tmp / "drivers")
     conf = home / ".config" / "tessera"
     conf.mkdir(parents=True, exist_ok=True)
-    (conf / "settings.toml").write_text('disabled_drivers = ["offdemo"]\n')
+    (conf / "settings.toml").write_text('disabled_drivers = ["offdemo", "maybedemo"]\n')
     log = open(tmp / "tessera.log", "w")
     proc = subprocess.Popen([str(TESSERA)], env=env, stdout=log, stderr=subprocess.STDOUT)
     try:
@@ -334,6 +342,11 @@ def main():
         if find(app, role="list item", name="USB demo · Undo the setup: the card service"):
             fail("undo row shown for a driver that is on")
         ok("Off demo driver: off, undoing its setup offered")
+        wait(
+            "the undo row of the driver whose token is unplugged",
+            lambda: find(app, role="list item", name="Maybe demo · Undo the setup: the card service"),
+        )
+        ok("Maybe demo driver: off, token unplugged, undoing its setup offered")
 
         # --- Apps page, Native tab ----------------------------------------
         open_page(app, "Apps")
