@@ -301,7 +301,12 @@ fn serve() -> ExitCode {
     eprintln!("tessera: serving in {}", paths::socket_dir().display());
     let mut last = usize::MAX;
     let mut health = Health::default();
-    status::set_patient(ds.iter().filter(|d| d.usb).map(|d| d.id.clone()).collect());
+    status::set_patient(
+        ds.iter()
+            .filter(|d| d.patient)
+            .map(|d| d.id.clone())
+            .collect(),
+    );
     loop {
         let running: Vec<(String, String)> = ds
             .iter()

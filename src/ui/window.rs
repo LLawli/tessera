@@ -63,7 +63,7 @@ pub(super) struct Win {
     pub(super) driver_rows: RefCell<Vec<(String, adw::ActionRow, String)>>,
     /// (driver id, what it needs, the row with the command) for the drivers
     /// that need a one-time setup (setup.rs); shown while it is not done.
-    pub(super) setup_rows: RefCell<Vec<(String, crate::setup::Need, adw::ActionRow)>>,
+    pub(super) setup_rows: RefCell<Vec<(String, crate::setup::Step, adw::ActionRow)>>,
     pub(super) app_rows: RefCell<Vec<AppRows>>,
     pub(super) native_rows: RefCell<Vec<NativeRows>>,
     pub(super) signer_rows: RefCell<Vec<BrowserRows>>,
@@ -541,13 +541,17 @@ pub(super) fn update_drivers(hub: &Hub, win: &Win) {
     {
         let ds = hub.drivers.borrow();
         let readers = hub.readers_now.borrow();
-        for (id, need, row) in win.setup_rows.borrow().iter() {
-            let unmet = ds
-                .iter()
-                .find(|d| &d.id == id)
-                .map(|d| crate::setup::unmet(d, &readers))
-                .unwrap_or_default();
-            row.set_visible(!disabled.contains(id) && unmet.contains(need));
+        for (id, step, row) in win.setup_rows.borrow().iter() {
+            use crate::setup::{self, Step};
+            let Some(d) = ds.iter().find(|d| &d.id == id) else {
+                row.set_visible(false);
+                continue;
+            };
+            let off = disabled.contains(id);
+            row.set_visible(match step {
+                Step::Do(need) => !off && setup::unmet(d, &readers).contains(need),
+                Step::Undo(need) => off && setup::leftover(d, &readers).contains(need),
+            });
         }
     }
     let running = hub.server.borrow().running();
@@ -599,8 +603,8 @@ pub(super) fn update_drivers(hub: &Hub, win: &Win) {
 
 /// The rows with the one-time setup a driver needs (setup.rs), each with
 /// its command to copy. update_drivers shows those not done yet.
-fn setup_rows(win: &Rc<Win>, d: &drivers::Driver) -> Vec<(crate::setup::Need, adw::ActionRow)> {
-    use crate::setup::{self, Need};
+fn setup_rows(win: &Rc<Win>, d: &drivers::Driver) -> Vec<(crate::setup::Step, adw::ActionRow)> {
+    use crate::setup::{self, Need, Step};
     let mut out = vec![];
     if d.usb {
         let row = plain_row(
@@ -614,7 +618,7 @@ fn setup_rows(win: &Rc<Win>, d: &drivers::Driver) -> Vec<(crate::setup::Need, ad
             t("Copy the command that lets Tessera reach the USB devices"),
         ));
         row.set_visible(false);
-        out.push((Need::Usb, row));
+        out.push((Step::Do(Need::Usb), row));
     }
     if let Some(reader) = &d.pcscd_ignore {
         let row = plain_row(
@@ -635,7 +639,36 @@ fn setup_rows(win: &Rc<Win>, d: &drivers::Driver) -> Vec<(crate::setup::Need, ad
             t("Copy the command that makes the card service leave this token alone"),
         ));
         row.set_visible(false);
-        out.push((Need::PcscdIgnore(reader.clone()), row));
+        out.push((Step::Do(Need::PcscdIgnore(reader.clone())), row));
+    }
+    // With the driver switched off: what is left of its setup, to undo.
+    if let (Some(reader), Some(_)) = (&d.pcscd_ignore, &d.usb_id) {
+        let row = plain_row(
+            &format!("{} · {}", d.name, t("Undo the setup: the card service")),
+            t("This driver is off, but the system's card service (pcscd) still leaves its token alone, so no other driver sees it (OpenSC, for an ePass2003 formatted by OpenSC). To give the token back, copy the command and run it in a terminal (it asks for your password). Switching this driver on again will ask for the setup again."),
+            "dialog-information-symbolic",
+        );
+        row.add_suffix(&copy_button_with(
+            win,
+            setup::pcscd_undo_command(reader),
+            t("Copy the command that gives the token back to the card service"),
+        ));
+        row.set_visible(false);
+        out.push((Step::Undo(Need::PcscdIgnore(reader.clone())), row));
+    }
+    if d.usb {
+        let row = plain_row(
+            &format!("{} · {}", d.name, t("Undo the setup: USB")),
+            t("This driver is off, and Tessera still reaches the USB devices, which only it needed. To take that away, copy the command, run it in a terminal and restart Tessera (menu)."),
+            "dialog-information-symbolic",
+        );
+        row.add_suffix(&copy_button_with(
+            win,
+            setup::usb_undo_command(),
+            t("Copy the command that takes the USB devices from Tessera"),
+        ));
+        row.set_visible(false);
+        out.push((Step::Undo(Need::Usb), row));
     }
     out
 }

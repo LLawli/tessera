@@ -29,7 +29,9 @@
 //! SafeNet's driver the cards both know (see flatpak/drivers/opensc).
 //!
 //! A driver that talks to its token over USB itself, not through pcscd,
-//! says so: `usb = true` (Tessera needs the USB devices, a permission the
+//! says so (`usb_id = "vvvv:pppp"` names the token, to offer undoing the
+//! setup once the driver is off; `patient = true`, for any driver, gives its
+//! listing a minute instead of ten seconds): `usb = true` (Tessera needs the USB devices, a permission the
 //! user grants) and `pcscd_ignore = "<reader name>"` (the system's pcscd
 //! must leave that reader alone, or both talk to the token at once and it
 //! hangs). Until both are done the driver is not served (setup.rs).
@@ -74,6 +76,10 @@ struct DriverFile {
     usb: bool,
     #[serde(default)]
     pcscd_ignore: Option<String>,
+    #[serde(default)]
+    usb_id: Option<String>,
+    #[serde(default)]
+    patient: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -100,6 +106,12 @@ pub struct Driver {
     pub usb: bool,
     /// The reader the system's pcscd must ignore (setup.rs).
     pub pcscd_ignore: Option<String>,
+    /// The token's USB id, "vvvv:pppp": tells the token is plugged in while
+    /// pcscd does not list its reader (setup.rs, undoing the setup).
+    pub usb_id: Option<String>,
+    /// Its listing may take long (status.rs): a card read slowly, as OpenSC
+    /// reads an ePass2003 the first time (19 s).
+    pub patient: bool,
 }
 
 impl Driver {
@@ -211,6 +223,11 @@ fn load_one(dir: &Path) -> Result<Driver> {
             .collect(),
         usb: d.usb,
         pcscd_ignore: d.pcscd_ignore.filter(|s| !s.trim().is_empty()),
+        usb_id: d
+            .usb_id
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty()),
+        patient: d.patient || d.usb,
     })
 }
 

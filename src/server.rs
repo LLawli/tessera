@@ -575,6 +575,8 @@ mod tests {
                 .collect(),
             usb: false,
             pcscd_ignore: None,
+            usb_id: None,
+            patient: false,
         }
     }
 

@@ -42,7 +42,7 @@ pub(super) fn supervise(hub: &Rc<Hub>) {
             hub.drivers
                 .borrow()
                 .iter()
-                .filter(|d| d.usb)
+                .filter(|d| d.patient)
                 .map(|d| d.id.clone())
                 .collect(),
         );

@@ -214,6 +214,15 @@ def make_usb_driver(drivers):
         f'name = "USB demo"\nmodule = "{trust}"\nusb = true\n'
         'pcscd_ignore = "Feitian ePass2003"\n'
     )
+    # One switched off (settings.toml) whose setup is left over: its token
+    # is plugged in (TESSERA_TEST_USB_IDS) and pcscd does not list its
+    # reader. Tessera offers the command that undoes the setup.
+    d = drivers / "OffDemo"
+    d.mkdir(parents=True)
+    (d / "driver.toml").write_text(
+        f'name = "Off demo"\nmodule = "{trust}"\n'
+        'pcscd_ignore = "Hidden Reader"\nusb_id = "aaaa:bbbb"\n'
+    )
 
 
 def expected_pjeoffice_library():
@@ -266,6 +275,7 @@ def main():
         TESSERA_HOST_MODULES=str(tmp / "modules"),
         # A reader the fake USB driver below wants pcscd to leave alone.
         TESSERA_TEST_READERS="Feitian ePass2003 00 00",
+        TESSERA_TEST_USB_IDS="aaaa:bbbb",
         LANG="C.UTF-8",
         LC_ALL="C.UTF-8",
         GDK_BACKEND="x11",
@@ -274,6 +284,9 @@ def main():
     )
     env.pop("NO_AT_BRIDGE", None)
     make_usb_driver(tmp / "drivers")
+    conf = home / ".config" / "tessera"
+    conf.mkdir(parents=True, exist_ok=True)
+    (conf / "settings.toml").write_text('disabled_drivers = ["offdemo"]\n')
     log = open(tmp / "tessera.log", "w")
     proc = subprocess.Popen([str(TESSERA)], env=env, stdout=log, stderr=subprocess.STDOUT)
     try:
@@ -314,6 +327,13 @@ def main():
         if find(app, role="list item", name="USB demo · One-time setup: USB"):
             fail("USB setup row shown with the USB devices in reach")
         ok("USB demo driver: held back, card service setup shown")
+        wait(
+            "the undo row of the driver that is off",
+            lambda: find(app, role="list item", name="Off demo · Undo the setup: the card service"),
+        )
+        if find(app, role="list item", name="USB demo · Undo the setup: the card service"):
+            fail("undo row shown for a driver that is on")
+        ok("Off demo driver: off, undoing its setup offered")
 
         # --- Apps page, Native tab ----------------------------------------
         open_page(app, "Apps")

@@ -111,6 +111,8 @@ Veja primeiro se o driver dele está instalado: os drivers dos fabricantes são 
 
 **ePass2003 entregue por certificadora:** ele precisa da extensão **ePass2003 (Feitian)**; veja a [pergunta sobre ele](#instalei-o-driver-do-epass2003-mas-o-token-não-aparece).
 
+**ePass2003 formatado pelo OpenSC (formato livre):** quem o atende é o driver OpenSC, e ele só o vê se o serviço de cartões não estiver deixando o ePass2003 de lado. Desligue o driver **ePass2003 (Feitian)** na página **Drivers** e rode os comandos das linhas **Desfazer a configuração** que aparecem abaixo dele. Um computador atende um formato de cada vez.
+
 #### Meu token GD Burti (ou cartão SafeSign) trava ou some.
 
 O OpenSC não sabe ler o token GD Burti e, quando tenta, o token trava, também para o SafeSign. O OpenSC do Tessera já deixa de lado os tokens GD Burti (os leitores "StarSign"). Se você usa um **cartão** SafeSign numa leitora comum, ou o problema continuar, desligue o OpenSC na página **Drivers** e tire e ponha o token. O OpenSC instalado pela distribuição (o Fedora e o Bluefin o trazem) também trava o token; por isso o Tessera o desliga (a chave **Desligar o OpenSC do sistema**, na página Sistema, deve ficar ligada). Os aplicativos que já estavam abertos só deixam de carregá-lo quando são abertos de novo.
@@ -336,6 +338,8 @@ Tessera found a p11-kit too old on the system. See the [question on failing sign
 First check that its driver is installed: the vendors' drivers are separate extensions (table in the [README](README.md)). With the token plugged in, if its driver is missing, the reader's row, on the **Home** page, says which one to install; the **Drivers** page lists under **Available to install** the ones missing, with the store button and the command ready to copy. After installing, use **Restart Tessera** in the menu. If the driver is there, unplug the token and plug it in again. If a driver shows as "Stopped", press **Restart**. Also check that the smart card service is on (`sudo systemctl enable --now pcscd.socket`).
 
 **ePass2003 from a certificate authority:** it needs the **ePass2003 (Feitian)** extension; see the [question about it](#i-installed-the-epass2003-driver-but-the-token-does-not-show).
+
+**ePass2003 formatted by OpenSC (the free format):** the OpenSC driver serves it, and sees it only if the card service is not leaving the ePass2003 alone. Switch the **ePass2003 (Feitian)** driver off on the **Drivers** page and run the commands of the **Undo the setup** rows that show below it. One computer serves one format at a time.
 
 #### My GD Burti token (or SafeSign card) hangs or disappears.
 

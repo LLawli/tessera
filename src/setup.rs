@@ -29,6 +29,14 @@ pub enum Need {
     PcscdIgnore(String),
 }
 
+/// One row of the window: something to do for a driver that is on, or
+/// something to undo for one that is off.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Step {
+    Do(Need),
+    Undo(Need),
+}
+
 /// Tessera sees the USB devices (outside a Flatpak, always).
 pub fn usb_visible() -> bool {
     !paths::in_flatpak() || Path::new("/dev/bus/usb").is_dir()
@@ -98,6 +106,53 @@ pub fn pcscd_undo_command(reader: &str) -> String {
     )
 }
 
+/// The command that takes the USB devices from Tessera again. Before
+/// Flatpak 1.15.11 the grant was `--device=all`, and `--nodevice=all` would
+/// take the graphics card too: there, Tessera's own overrides are reset.
+pub fn usb_undo_command() -> String {
+    match flatpak_version() {
+        Some(v) if v < (1, 15, 11) => {
+            format!("flatpak override --user --reset {}", paths::APP_ID)
+        }
+        _ => format!("flatpak override --user --nodevice=usb {}", paths::APP_ID),
+    }
+}
+
+/// A USB device with this id ("vvvv:pppp") is plugged in, by the kernel's
+/// list (which the sandbox sees without the USB devices themselves).
+/// TESSERA_TEST_USB_IDS (ids split by `;`) stands in for it in tests.
+pub fn usb_present(id: &str) -> bool {
+    if let Ok(ids) = std::env::var("TESSERA_TEST_USB_IDS") {
+        return ids.split(';').any(|i| i.eq_ignore_ascii_case(id));
+    }
+    let Ok(devices) = std::fs::read_dir("/sys/bus/usb/devices") else {
+        return false;
+    };
+    devices.flatten().any(|d| {
+        let read = |f: &str| std::fs::read_to_string(d.path().join(f)).unwrap_or_default();
+        let found = format!("{}:{}", read("idVendor").trim(), read("idProduct").trim());
+        found.eq_ignore_ascii_case(id)
+    })
+}
+
+/// What is left of the one-time setup of `d`, to undo once it is off:
+/// - the USB devices, still granted to Tessera;
+/// - pcscd still skipping the reader, seen as the token plugged in
+///   (`usb_id`) with no such reader listed. That hides the token from every
+///   other driver: an ePass2003 formatted by OpenSC never reaches OpenSC.
+pub fn leftover(d: &Driver, readers: &[String]) -> Vec<Need> {
+    let mut out = vec![];
+    if d.usb && paths::in_flatpak() && usb_visible() {
+        out.push(Need::Usb);
+    }
+    if let (Some(r), Some(id)) = (&d.pcscd_ignore, &d.usb_id) {
+        if usb_present(id) && !pcscd_lists(r, readers) {
+            out.push(Need::PcscdIgnore(r.clone()));
+        }
+    }
+    out
+}
+
 /// pcscd lists a reader whose name contains `filter` (pcscd matches its
 /// ignore list the same way, by substring).
 pub fn pcscd_lists(filter: &str, readers: &[String]) -> bool {
@@ -154,6 +209,39 @@ mod tests {
         ];
         assert!(pcscd_lists("Feitian ePass2003", &readers));
         assert!(!pcscd_lists("Feitian ePass2003", &readers[1..]));
+    }
+
+    /// Off, a driver's setup is left over while the token is plugged in
+    /// and pcscd does not list its reader.
+    #[test]
+    fn leftover_is_the_hidden_reader_of_a_plugged_token() {
+        let d = Driver {
+            id: "epass2003".into(),
+            name: "x".into(),
+            vendor: String::new(),
+            description: String::new(),
+            module: "/x".into(),
+            tools: vec![],
+            create_dirs: vec![],
+            library_path: vec![],
+            env: Default::default(),
+            when_on: Default::default(),
+            usb: false,
+            pcscd_ignore: Some("Feitian ePass2003".into()),
+            usb_id: Some("096e:0807".into()),
+            patient: false,
+        };
+        let listed = vec!["Feitian ePass2003 00 00".to_string()];
+        std::env::set_var("TESSERA_TEST_USB_IDS", "046d:0825;096E:0807");
+        assert_eq!(
+            leftover(&d, &[]),
+            vec![Need::PcscdIgnore("Feitian ePass2003".into())]
+        );
+        assert!(leftover(&d, &listed).is_empty());
+        std::env::set_var("TESSERA_TEST_USB_IDS", "046d:0825");
+        assert!(leftover(&d, &[]).is_empty());
+        std::env::remove_var("TESSERA_TEST_USB_IDS");
+        assert!(usb_undo_command().ends_with(paths::APP_ID));
     }
 
     /// The printf in the command writes the drop-in systemd expects.

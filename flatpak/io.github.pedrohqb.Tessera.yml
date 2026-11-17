@@ -169,8 +169,8 @@ modules:
         tag: 2.5.3
         commit: 58de510789550941e6548399e024083f54b8d4f5
 
-  # OpenSC, the free PKCS#11 driver for many cards and tokens (PIV cards
-  # and YubiKeys, OpenPGP cards, CardOS, IDPrime, national ID cards…). Free software (LGPL 2.1), so it is built here, not
+  # OpenSC, the free PKCS#11 driver for many cards and tokens (Feitian
+  # ePass2003 formatted by OpenSC, PIV cards and YubiKeys, OpenPGP cards, CardOS, IDPrime, national ID cards…). Free software (LGPL 2.1), so it is built here, not
   # downloaded at install time like the vendors' drivers. Its driver.toml
   # (flatpak/drivers/opensc) points at /app/lib/opensc-pkcs11.so and at its
   # own configuration, so /app/etc is not used. The command-line tools stay,

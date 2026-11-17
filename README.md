@@ -10,7 +10,7 @@ O Tessera é uma central de tokens para Flatpak. Ele faz o token A3 ou o certifi
 
 *Tessera* era, em latim, a pequena peça que identificava quem a portava.
 
-O Tessera já traz o driver **OpenSC**, software livre, para os muitos cartões e tokens que o OpenSC atende (PIV e YubiKey, OpenPGP, CardOS, IDPrime, carteiras de identidade de vários países).
+O Tessera já traz o driver **OpenSC**, software livre, para os muitos cartões e tokens que o OpenSC atende (ePass2003 da Feitian no formato livre, isto é, formatado pelo próprio OpenSC; PIV e YubiKey, OpenPGP, CardOS, IDPrime, carteiras de identidade de vários países).
 
 Os drivers dos fabricantes são extensões, que você instala conforme o seu token (veja [Instalação](#3-instalar-o-driver-do-seu-token)):
 
@@ -21,7 +21,7 @@ Os drivers dos fabricantes são extensões, que você instala conforme o seu tok
 | ePass2003 (Feitian), como as certificadoras entregam; pede duas configurações únicas, mostradas na página **Drivers** ([abaixo](#epass2003-configuração-única)) | `io.github.pedrohqb.Tessera.Driver.ePass2003` |
 | Certificado em nuvem do Serpro, com o aplicativo SerproID | `io.github.pedrohqb.Tessera.Driver.SerproID` |
 | Certificado em nuvem RemoteID, da Certisign (experimental; driver independente, feito por engenharia reversa, sem vínculo com a Certisign; mantido pelo autor do RemoteID) | `io.github.pedrohqb.Tessera.Driver.RemoteID` |
-| Tokens do OpenSC (PIV, YubiKey e outros) | nenhuma: já vem no Tessera |
+| Tokens do OpenSC (ePass2003 no formato livre, PIV, YubiKey e outros) | nenhuma: já vem no Tessera |
 
 Os tokens ficam disponíveis para estes aplicativos, em Flatpak ou instalados pela distribuição:
 
@@ -148,6 +148,8 @@ O driver da Feitian fala com o token direto pelo USB, sem passar pelo serviço d
 
 Enquanto faltar alguma, o Tessera não carrega o driver. Feitas as duas, as linhas somem e o driver começa sozinho; a primeira leitura do token leva uns 15 segundos.
 
+**ePass2003 no formato livre.** Um ePass2003 formatado pelo OpenSC (e não pelo programa da Feitian, como os das certificadoras) é atendido pelo driver OpenSC, que já vem no Tessera, e dispensa essas configurações. Mais que isso: a do serviço de cartões o esconde do OpenSC. Por isso, um computador atende um formato de cada vez. Para usar o formato livre, desligue o driver **ePass2003 (Feitian)** na página **Drivers**: enquanto sobrar algo da configuração, aparecem abaixo dele as linhas **Desfazer a configuração**, cada uma com o comando para copiar e rodar no terminal. A primeira leitura de um token pelo OpenSC pode levar uns 20 segundos; as seguintes são rápidas.
+
 #### 4. Instalar os assinadores web (se precisar)
 
 O **Lacuna Web PKI**, o **Softplan WebSigner** (exigido pelo e-SAJ) e o **Certisign WebSigner** (portais de assinatura da Certisign) são plugins de navegador com um programa por trás. Nos navegadores em Flatpak, cada um é uma extensão do Tessera. Instale só os que usar, do mesmo jeito que o driver: pela loja (os nomes são **Lacuna Web PKI**, **Softplan WebSigner** e **Certisign WebSigner**) ou pelo terminal, na mesma instalação do Tessera (`--user` ou `--system`):
@@ -232,7 +234,7 @@ Tessera is a token hub for Flatpak. It makes A3 tokens and cloud certificates wo
 
 *Tessera* was the Latin word for a small token that identified its bearer.
 
-Tessera comes with the **OpenSC** driver, free software, for the many cards and tokens OpenSC supports (PIV and YubiKey, OpenPGP, CardOS, IDPrime, national ID cards).
+Tessera comes with the **OpenSC** driver, free software, for the many cards and tokens OpenSC supports (Feitian's ePass2003 in the free format, that is, formatted by OpenSC itself; PIV and YubiKey, OpenPGP, CardOS, IDPrime, national ID cards).
 
 The vendors' drivers are extensions, installed for the token you have (see [Installation](#3-install-your-tokens-driver)):
 
@@ -243,7 +245,7 @@ The vendors' drivers are extensions, installed for the token you have (see [Inst
 | Feitian's ePass2003, as Brazilian certificate authorities deliver it; needs two one-time steps, shown on the **Drivers** page ([below](#epass2003-one-time-setup)) | `io.github.pedrohqb.Tessera.Driver.ePass2003` |
 | Serpro's cloud certificate, with the SerproID app | `io.github.pedrohqb.Tessera.Driver.SerproID` |
 | Certisign's RemoteID cloud certificate (experimental; independent driver, made by reverse engineering, not affiliated with Certisign; maintained by RemoteID's developer) | `io.github.pedrohqb.Tessera.Driver.RemoteID` |
-| OpenSC's tokens (PIV, YubiKey and others) | none: built into Tessera |
+| OpenSC's tokens (ePass2003 in the free format, PIV, YubiKey and others) | none: built into Tessera |
 
 The tokens are available to these apps, as Flatpaks or installed from the distribution:
 
@@ -365,6 +367,8 @@ Feitian's driver talks to the token over USB itself, not through the system's sm
 2. **Card service:** makes `pcscd` leave the ePass2003 to the driver; if both talk to the token at once, it hangs until it is unplugged. The command asks for your password. The warning that `pcscd.socket` is still active is expected. The command that undoes it shows when you hover over the row.
 
 Until both are done, Tessera does not load the driver. Once they are, the rows go away and the driver starts by itself; the first read of the token takes about 15 seconds.
+
+**ePass2003 in the free format.** An ePass2003 formatted by OpenSC (not by Feitian's software, as the certificate authorities' are) is served by the OpenSC driver built into Tessera and needs none of this setup. More than that: the card service step hides it from OpenSC. So one computer serves one format at a time. To use the free format, switch the **ePass2003 (Feitian)** driver off on the **Drivers** page: while something of its setup is left, the rows **Undo the setup** show below it, each with a command to copy and run in a terminal. OpenSC's first read of a token can take about 20 seconds; the next ones are quick.
 
 #### 4. Install the web signers (if you need them)
 

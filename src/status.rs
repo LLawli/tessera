@@ -19,7 +19,9 @@ const PATIENT_TIMEOUT: Duration = Duration::from_secs(60);
 
 static PATIENT: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
-/// The drivers whose listing gets PATIENT_TIMEOUT (those with `usb`).
+/// The drivers whose listing gets PATIENT_TIMEOUT (`patient` in drivers.rs:
+/// those with `usb`, and those that say so, as OpenSC, whose first read of an
+/// ePass2003 with five certificates took 19 s).
 pub fn set_patient(ids: Vec<String>) {
     *PATIENT.lock().unwrap_or_else(|e| e.into_inner()) = ids;
 }

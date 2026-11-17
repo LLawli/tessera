@@ -13,6 +13,10 @@ description = "ePass2003 formatted by Feitian's Windows software (as certificate
 module = "extra/libcastle.so.1.0.0"
 usb = true
 pcscd_ignore = "Feitian ePass2003"
+# The token, to tell it is plugged in while pcscd skips it: with this driver
+# off, Tessera then offers the command that undoes the setup (an ePass2003
+# formatted by OpenSC needs pcscd to see it).
+usb_id = "096e:0807"
 
 # The library lists RSA-PSS (what TLS 1.3 signs with) but its C_SignInit
 # fails; its raw RSA is right, so Tessera makes PSS with it (src/pss.rs).
