@@ -194,6 +194,11 @@ pub fn run(args: &[String]) -> i32 {
             None => served,
         };
         // PSS made with raw RSA, for drivers that fail it (see pss.rs).
+        let served = if crate::mechflags::wanted() {
+            crate::mechflags::wrap(served)
+        } else {
+            served
+        };
         let served = if crate::pss::wanted() {
             crate::pss::wrap(served)
         } else {

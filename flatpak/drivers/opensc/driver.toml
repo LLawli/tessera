@@ -18,6 +18,11 @@ shared = true
 # Tessera's own configuration (next to this file), the same in both
 # packages: OpenSC's defaults.
 OPENSC_CONF = "./opensc.conf"
+# OpenSC says its RSA mechanisms sign, verify and decrypt but do not
+# encrypt, and Java (PJeOffice) drops a mechanism reported so, signing
+# included: Tessera adds the encrypt flag to what it reports
+# (src/mechflags.rs).
+TESSERA_ENCRYPT_FLAG = "1"
 
 # SafeNet's driver serves IDPrime cards and the eToken 5110 too. While it is
 # switched on, OpenSC leaves those cards to it (every card driver but

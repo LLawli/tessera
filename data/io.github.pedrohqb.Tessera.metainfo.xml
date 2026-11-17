@@ -51,6 +51,14 @@
     <display_length compare="ge">360</display_length>
   </requires>
   <releases>
+    <release version="0.4.7" date="2026-11-17">
+      <description>
+        <p>PJeOffice signs with OpenSC's tokens.</p>
+        <ul>
+          <li>Java apps, as PJeOffice, refused to sign with a token served by OpenSC ("Supplied key is not a RSAPrivateKey instance"), while browsers signed: Java drops the RSA mechanism as OpenSC reports it. Tessera now reports it in the way Java accepts.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.6" date="2026-11-17">
       <description>
         <p>The ePass2003 in the free format, formatted by OpenSC.</p>

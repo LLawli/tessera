@@ -22,6 +22,7 @@ mod i18n;
 mod jsignpdf;
 mod libreoffice;
 mod masterpdf;
+mod mechflags;
 mod native;
 mod nss;
 mod paths;

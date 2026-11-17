@@ -15,6 +15,7 @@ src/
   remote.rs     `tessera remote`: the process that loads the driver on each connection
   shared.rs     `tessera shared`: one process that loads a driver once and serves every connection (`usb` or `shared`)
   setup.rs      a USB driver's one-time setup: the USB devices, pcscd leaving its reader (the commands), and undoing it
+  mechflags.rs  the encrypt flag added to the mechanisms that decrypt (TESSERA_ENCRYPT_FLAG; OpenSC's, for Java)
   pss.rs        RSA-PSS made with the driver's raw RSA (TESSERA_PSS_VIA_RAW; the ePass2003's)
   stable.rs     stable copy of the mechanism parameters (the SerproID defect)
   serial.rs     the token serial a driver reports (TESSERA_TOKEN_SERIAL; SerproID's)
