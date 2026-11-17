@@ -160,3 +160,13 @@ The program name, the command line, the environment, signals, standard input and
 - **TLS 1.2 only for website login:** TLS 1.3 requires an RSA-PSS signature, which Certisign's service does not provide. Signing documents is not affected.
 - **Bug reports:** `remoteid diagnostico` packs a log with no password, PIN or authenticator code.
 - **Experimental:** the window marks it so, in **Available to install** and once installed: it is new, by a third party, and not yet tested by hand here ([Compatibility](compatibility.md)).
+
+## Bird ID (not packaged)
+
+Soluti's cloud certificate. It is not an extension, and will be made only if someone with a Bird ID certificate asks for it and can test it: without one, nothing here could be checked to sign. What a look at Soluti's Linux package (`utility-birdid` 2.4.4, `birdID-Desktop.deb`, November 2026) showed, for whoever takes it up:
+
+- **Two packages, one difference:** "Linux x64" and "Linux x64 18" differ only in the driver and the helper, built for an older glibc (2.15 instead of 2.34) for Ubuntu 18.04.
+- **The driver,** `resources/extraResources/linux/x64/vault-pkcs11.so` (130 KB, needs only libcurl and glibc), talks to Soluti directly over HTTPS (`api.birdid.com.br`; OAuth2 with a password grant, then a "signature_session" with a lifetime), not through the desktop app. Its settings are `~/vault/vault.properties` and `~/vault/vault.bin` (this computer's credentials, encrypted), which the desktop app writes at its first login; the paths inside are absolute.
+- **The desktop app** is Electron (about 230 MB installed). It runs the helper, `vault-utility-assistant`, from a fixed `/usr/local/lib` path, as a small HTTP server on `127.0.0.127` (for the app and the browser extension). The helper's `-register`, behind the app's "Registrar o driver", adds a "BIRDID VIRTUAL TOKEN" module to every NSS database it finds under the home folder, browsers set up by Tessera included.
+- **Likely shape:** an extension that takes only `vault-pkcs11.so`, with no app, server or registration, and reads a copy of `~/vault` in Tessera's own data folder (one command in the window, the paths in `vault.properties` rewritten). Running the Electron app inside Tessera would need `/usr/local/lib` and its setuid `chrome-sandbox`, neither of which a Flatpak sandbox has.
+- **To find out first:** whether the PIN the driver asks for is the code from the Bird ID phone app or a fixed password; whether the driver lists the certificate and signs with the app closed; how long a signing session lasts (the default in the driver is 18000, likely seconds).

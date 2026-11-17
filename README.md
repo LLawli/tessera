@@ -213,6 +213,7 @@ Fechar a janela não desliga o Tessera: ele fica na bandeja. Para dúvidas e pro
 - **Testar com token real** o driver OpenSC e os aplicativos acrescentados por último: Thunderbird, Evolution, LibreOffice e Assinador SERPRO (o JSignPdf e o Master PDF Editor já foram testados).
 - **Testar o RemoteID** com uma conta de verdade.
 - **Testar a extensão SafeNet** com um token de verdade. O driver já funcionou quando vinha embutido no Tessera; falta confirmar o empacotamento como extensão, agora com a versão 10.9.6885, do pacote da GlobalSign (SafeSign e SerproID já foram testados).
+- **Bird ID (certificado em nuvem da Soluti), só se alguém pedir e puder testar.** O pacote Linux da Soluti traz um driver PKCS#11 pequeno, que fala direto com a Soluti pela internet; a extensão levaria só ele, com a configuração criada uma vez pelo aplicativo oficial. Não será feita sem um pedido de quem tenha um certificado Bird ID para testar. Veja [Drivers](docs/drivers.md#bird-id-not-packaged) (em inglês).
 
 ---
 
@@ -426,6 +427,7 @@ Closing the window does not stop Tessera: it stays in the tray. For questions an
 - **Test with a real token** the OpenSC driver and the apps added last: Thunderbird, Evolution, LibreOffice and Assinador SERPRO (JSignPdf and Master PDF Editor have been tested).
 - **Test RemoteID** with a real account.
 - **Test the SafeNet extension** with a real token. The driver already worked when it was built into Tessera; what is left is confirming its packaging as an extension, now with version 10.9.6885, from GlobalSign's package (SafeSign and SerproID have been tested).
+- **Bird ID (Soluti's cloud certificate), only if someone asks and can test it.** Soluti's Linux package has a small PKCS#11 driver that talks to Soluti over the internet; the extension would take only that, with the settings made once by the official app. It will not be made without a request from someone with a Bird ID certificate to test it. See [Drivers](docs/drivers.md#bird-id-not-packaged).
 
 ### Documentation, support and license
 
