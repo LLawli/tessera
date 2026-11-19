@@ -101,6 +101,8 @@ Quase sempre é a versão do p11-kit do sistema. Com a 0.25.5 ou anterior, o Tes
 
 Isso afeta o Debian 12 e 13, o LMDE 6 e 7, o Ubuntu 24.04 e o Linux Mint 22. Na família Debian, a versão aparece em `dpkg -l libp11-kit0`. Nesses sistemas, use o [distrobox-adv-br](https://github.com/pedrohqb/distrobox-adv-br). No MX Linux, o p11-kit do repositório de teste (MX Package Installer → MX Test Repo) resolve.
 
+**GD Burti do modelo mais antigo** (StarSign Crypto USB Token): até novembro de 2026, a extensão SafeSign mostrava o certificado, aceitava o PIN e falhava em toda assinatura (no PJeOffice, `CKR_DEVICE_ERROR`), porque o SafeSign não achava um de seus arquivos dentro do Tessera. O modelo mais novo (StarSign CUT S) não era afetado. Está corrigido na extensão: rode `flatpak update` e, no menu do Tessera, **Reiniciar o Tessera**.
+
 #### A página Início diz que a assinatura não funciona neste sistema.
 
 O Tessera identificou um p11-kit antigo demais no sistema. Veja a [pergunta sobre a assinatura que falha](#o-pin-é-pedido-mas-a-assinatura-falha-por-quê).
@@ -328,6 +330,8 @@ If you will not use the vendor packages anymore, you can also uninstall them fro
 Almost always, it is the system's p11-kit version. With 0.25.5 or older, Tessera shows the tokens and the PIN is asked, but every signature fails (in the browser, `SSL_ERROR_HANDSHAKE_FAILED`). In 0.25.6, p11-kit changed how it sends the signing parameters, and older versions do not understand Tessera on that point. Listing tokens and asking for the PIN do not use those parameters, which is why that part works.
 
 This affects Debian 12 and 13, LMDE 6 and 7, Ubuntu 24.04 and Linux Mint 22. On the Debian family, `dpkg -l libp11-kit0` shows the version. On those systems, use [distrobox-adv-br](https://github.com/pedrohqb/distrobox-adv-br). On MX Linux, the p11-kit from the test repository (MX Package Installer → MX Test Repo) solves it.
+
+**The older GD Burti model** (StarSign Crypto USB Token): until November 2026, the SafeSign extension showed the certificate, took the PIN and failed every signature (in PJeOffice, `CKR_DEVICE_ERROR`), because SafeSign could not find one of its files inside Tessera. The newer model (StarSign CUT S) was not affected. It is fixed in the extension: run `flatpak update` and, in Tessera's menu, **Restart Tessera**.
 
 #### The Home page says signing does not work on this system.
 
