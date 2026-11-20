@@ -45,10 +45,10 @@ Os tokens ficam disponíveis para estes aplicativos, em Flatpak ou instalados pe
 | Arch Linux, Manjaro, BigLinux, EndeavourOS e CachyOS | funciona |
 | openSUSE Tumbleweed | funciona |
 | Ubuntu 26.04 ou mais novo | funciona |
-| MX Linux 25 | funciona com o p11-kit do repositório de teste do MX (MX Package Installer → MX Test Repo) |
-| **Debian 12 e 13, LMDE 6 e 7, Ubuntu 24.04, Linux Mint 22** | **não funciona:** use o [distrobox-adv-br](https://github.com/pedrohqb/distrobox-adv-br) |
+| Debian 13, LMDE 7, MX Linux 25, Ubuntu 24.04 e Linux Mint 22 | funciona, com o p11-kit do próprio Tessera no lugar do servidor do sistema ([abaixo](#debian-13-e-ubuntu-2404-o-servidor-com-o-p11-kit-do-tessera)) |
+| **Debian 12 e LMDE 6** | **não funciona:** use o [distrobox-adv-br](https://github.com/pedrohqb/distrobox-adv-br) |
 
-O que decide é a versão do p11-kit do sistema: a assinatura precisa da 0.25.6 ou mais nova. Veja [por quê](FAQ.md#o-pin-é-pedido-mas-a-assinatura-falha-por-quê).
+O que decide é a versão do p11-kit do sistema: a 0.25.5 e as anteriores não se entendem com as mais novas na hora de assinar. No Debian 13 e no Ubuntu 24.04, o Tessera traz um p11-kit corrigido e serve com ele; o Debian 12 tem uma biblioteca C antiga demais para rodá-lo. Veja [por quê](FAQ.md#o-pin-é-pedido-mas-a-assinatura-falha-por-quê).
 
 ---
 
@@ -81,27 +81,51 @@ sudo systemctl enable --now pcscd.socket
 systemctl --user enable --now p11-kit-server.socket
 ```
 
-**Ubuntu 26.04 ou mais novo** (o p11-kit dele não traz o `p11-kit-server.socket`, então o servidor entra como serviço do usuário):
+**Ubuntu 26.04 ou mais novo** (o p11-kit dele não traz as unidades do systemd, então o soquete e o servidor entram como unidades do usuário; quem já tinha o serviço do comando anterior pode rodar este, que o substitui):
 
 ```bash
 sudo apt install flatpak pcscd libccid p11-kit
 sudo systemctl enable --now pcscd.socket
 mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/p11-kit-server.socket <<'EOF'
+[Unit]
+Description=p11-kit server
+
+[Socket]
+Priority=6
+Backlog=5
+ListenStream=%t/p11-kit/pkcs11
+SocketMode=0600
+
+[Install]
+WantedBy=sockets.target
+EOF
 cat > ~/.config/systemd/user/p11-kit-server.service <<'EOF'
 [Unit]
 Description=p11-kit server
 Documentation=man:p11-kit(8)
+Requires=p11-kit-server.socket
 
 [Service]
-ExecStartPre=/bin/mkdir -p -m 700 %t/p11-kit
-ExecStart=/usr/bin/p11-kit server -f -n %t/p11-kit/pkcs11 pkcs11:
+Type=simple
+ExecStart=/usr/bin/p11-kit server -f pkcs11:
 Restart=on-failure
 
 [Install]
+Also=p11-kit-server.socket
 WantedBy=default.target
 EOF
 systemctl --user daemon-reload
-systemctl --user enable --now p11-kit-server.service
+systemctl --user stop p11-kit-server.service
+systemctl --user enable p11-kit-server.service
+systemctl --user start p11-kit-server.socket p11-kit-server.service
+```
+
+**Debian 13, LMDE 7, MX Linux 25, Ubuntu 24.04 e Linux Mint 22** (o servidor p11-kit vem depois de instalar o Tessera, [no fim do passo 2](#debian-13-e-ubuntu-2404-o-servidor-com-o-p11-kit-do-tessera)):
+
+```bash
+sudo apt install flatpak pcscd libccid p11-kit
+sudo systemctl enable --now pcscd.socket
 ```
 
 #### 2. Instalar o Tessera
@@ -125,6 +149,52 @@ flatpak --system install flatpark io.github.pedrohqb.Tessera
 ```
 
 As atualizações chegam com o `flatpak update`.
+
+##### Debian 13 e Ubuntu 24.04: o servidor com o p11-kit do Tessera
+
+Nesses sistemas (e no LMDE 7, no MX Linux 25 e no Linux Mint 22), o servidor p11-kit do usuário é o p11-kit que vem dentro do Tessera, rodado a partir da instalação do Flatpak. Abra o Tessera: na página **Sistema**, a linha **Conexão com o sistema** tem o botão que copia o comando; rode-o uma vez no terminal. O Tessera fecha e abre de novo, e a linha fica verde. Os aplicativos que estavam abertos precisam ser abertos de novo. O mesmo comando, para rodar direto:
+
+```bash
+D="$(dirname "$(flatpak info --show-location io.github.pedrohqb.Tessera)")/active/files"
+[ -d "$D/extra/tessera" ] && D="$D/extra/tessera"
+D="$D/lib/tessera/p11-kit"
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/p11-kit-server.socket <<'EOF'
+[Unit]
+Description=p11-kit server (Tessera's p11-kit)
+
+[Socket]
+Priority=6
+Backlog=5
+ListenStream=%t/p11-kit/pkcs11
+SocketMode=0600
+
+[Install]
+WantedBy=sockets.target
+EOF
+cat > ~/.config/systemd/user/p11-kit-server.service <<EOF
+[Unit]
+Description=p11-kit server (Tessera's p11-kit)
+Documentation=man:p11-kit(8)
+Requires=p11-kit-server.socket
+
+[Service]
+Type=simple
+Environment=P11_KIT_PRIVATEDIR=$D
+ExecStart=$D/p11-kit server -f pkcs11:
+Restart=on-failure
+
+[Install]
+Also=p11-kit-server.socket
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user stop p11-kit-server.service
+systemctl --user enable p11-kit-server.service
+systemctl --user start p11-kit-server.socket p11-kit-server.service
+```
+
+Ele vale para quem já tinha o servidor do sistema como serviço do usuário (o comando antigo deste README): os arquivos são substituídos e o servidor troca na hora. As atualizações do Tessera não exigem rodá-lo de novo.
 
 #### 3. Instalar o driver do seu token
 
@@ -268,10 +338,10 @@ The tokens are available to these apps, as Flatpaks or installed from the distri
 | Arch Linux, Manjaro, BigLinux, EndeavourOS and CachyOS | works |
 | openSUSE Tumbleweed | works |
 | Ubuntu 26.04 or newer | works |
-| MX Linux 25 | works with the p11-kit from MX's test repository (MX Package Installer → MX Test Repo) |
-| **Debian 12 and 13, LMDE 6 and 7, Ubuntu 24.04, Linux Mint 22** | **does not work:** use [distrobox-adv-br](https://github.com/pedrohqb/distrobox-adv-br) |
+| Debian 13, LMDE 7, MX Linux 25, Ubuntu 24.04 and Linux Mint 22 | works, with Tessera's own p11-kit in place of the system's server ([below](#debian-13-and-ubuntu-2404-the-server-with-tesseras-p11-kit)) |
+| **Debian 12 and LMDE 6** | **does not work:** use [distrobox-adv-br](https://github.com/pedrohqb/distrobox-adv-br) |
 
-What decides it is the system's p11-kit version: signing needs 0.25.6 or newer. See [why](FAQ.md#the-pin-is-asked-but-signing-fails-why).
+What decides it is the system's p11-kit version: 0.25.5 and older do not understand newer ones when signing. On Debian 13 and Ubuntu 24.04, Tessera brings a fixed p11-kit and serves with it; Debian 12's C library is too old to run it. See [why](FAQ.md#the-pin-is-asked-but-signing-fails-why).
 
 ### Installation
 
@@ -302,27 +372,51 @@ sudo systemctl enable --now pcscd.socket
 systemctl --user enable --now p11-kit-server.socket
 ```
 
-**Ubuntu 26.04 or newer** (its p11-kit ships no `p11-kit-server.socket`, so the server goes in as a user service):
+**Ubuntu 26.04 or newer** (its p11-kit ships no systemd units, so the socket and the server go in as user units; whoever has the service of the earlier command can run this, which replaces it):
 
 ```bash
 sudo apt install flatpak pcscd libccid p11-kit
 sudo systemctl enable --now pcscd.socket
 mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/p11-kit-server.socket <<'EOF'
+[Unit]
+Description=p11-kit server
+
+[Socket]
+Priority=6
+Backlog=5
+ListenStream=%t/p11-kit/pkcs11
+SocketMode=0600
+
+[Install]
+WantedBy=sockets.target
+EOF
 cat > ~/.config/systemd/user/p11-kit-server.service <<'EOF'
 [Unit]
 Description=p11-kit server
 Documentation=man:p11-kit(8)
+Requires=p11-kit-server.socket
 
 [Service]
-ExecStartPre=/bin/mkdir -p -m 700 %t/p11-kit
-ExecStart=/usr/bin/p11-kit server -f -n %t/p11-kit/pkcs11 pkcs11:
+Type=simple
+ExecStart=/usr/bin/p11-kit server -f pkcs11:
 Restart=on-failure
 
 [Install]
+Also=p11-kit-server.socket
 WantedBy=default.target
 EOF
 systemctl --user daemon-reload
-systemctl --user enable --now p11-kit-server.service
+systemctl --user stop p11-kit-server.service
+systemctl --user enable p11-kit-server.service
+systemctl --user start p11-kit-server.socket p11-kit-server.service
+```
+
+**Debian 13, LMDE 7, MX Linux 25, Ubuntu 24.04 and Linux Mint 22** (the p11-kit server comes after Tessera is installed, [at the end of step 2](#debian-13-and-ubuntu-2404-the-server-with-tesseras-p11-kit)):
+
+```bash
+sudo apt install flatpak pcscd libccid p11-kit
+sudo systemctl enable --now pcscd.socket
 ```
 
 #### 2. Install Tessera
@@ -346,6 +440,52 @@ flatpak --system install flatpark io.github.pedrohqb.Tessera
 ```
 
 Updates come with `flatpak update`.
+
+##### Debian 13 and Ubuntu 24.04: the server with Tessera's p11-kit
+
+On these systems (and on LMDE 7, MX Linux 25 and Linux Mint 22), the user's p11-kit server is the p11-kit that comes inside Tessera, run from Flatpak's installation. Open Tessera: on the **System** page, the **System connection** row has the button that copies the command; run it once in a terminal. Tessera closes and opens again, and the row turns green. The apps that were open need opening again. The same command, to run directly:
+
+```bash
+D="$(dirname "$(flatpak info --show-location io.github.pedrohqb.Tessera)")/active/files"
+[ -d "$D/extra/tessera" ] && D="$D/extra/tessera"
+D="$D/lib/tessera/p11-kit"
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/p11-kit-server.socket <<'EOF'
+[Unit]
+Description=p11-kit server (Tessera's p11-kit)
+
+[Socket]
+Priority=6
+Backlog=5
+ListenStream=%t/p11-kit/pkcs11
+SocketMode=0600
+
+[Install]
+WantedBy=sockets.target
+EOF
+cat > ~/.config/systemd/user/p11-kit-server.service <<EOF
+[Unit]
+Description=p11-kit server (Tessera's p11-kit)
+Documentation=man:p11-kit(8)
+Requires=p11-kit-server.socket
+
+[Service]
+Type=simple
+Environment=P11_KIT_PRIVATEDIR=$D
+ExecStart=$D/p11-kit server -f pkcs11:
+Restart=on-failure
+
+[Install]
+Also=p11-kit-server.socket
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user stop p11-kit-server.service
+systemctl --user enable p11-kit-server.service
+systemctl --user start p11-kit-server.socket p11-kit-server.service
+```
+
+It holds for those who already had the system's server as a user service (this README's old command): the files are replaced and the server changes at once. Tessera's updates do not need it run again.
 
 #### 3. Install your token's driver
 

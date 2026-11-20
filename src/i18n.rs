@@ -117,6 +117,8 @@ const PT_BR: &[(&str, &str)] = &[
     ("published", "publicado(s)"),
     ("token(s)", "token(s)"),
     ("On", "Ativo"),
+    ("On, but this system's p11-kit is too old to sign. Copy the command with the button on the right and run it once in a terminal.",
+     "Ativo, mas o p11-kit deste sistema é antigo demais para assinar. Copie o comando com o botão à direita e rode-o uma vez num terminal."),
     ("Off: the apps cannot see the tokens. Run once in a terminal:",
      "Desligado: os aplicativos não veem os tokens. Rode uma vez no terminal:"),
     ("token(s) of Tessera seen by the apps", "token(s) do Tessera vistos pelos aplicativos"),

@@ -249,8 +249,11 @@ def expected_pjeoffice_library():
 OLD_P11KIT_BANNER = "On this system signing does not work (old p11-kit); see the project's documentation"
 
 
-def old_p11kit_host():
-    """The same rule as native.rs (old_p11kit_by_release), on this host."""
+def unsupported_p11kit_host():
+    """The same rule as native.rs (release_class), on this host: a p11-kit
+    too old to sign that Tessera's own p11-kit cannot replace either. Debian 13
+    and Ubuntu 24.04 (CI's) are not: there the System connection row asks
+    for the command instead of the banner."""
     text = Path("/etc/os-release").read_text()
     ids, codenames = [], []
     for line in text.splitlines():
@@ -260,8 +263,10 @@ def old_p11kit_host():
             ids += value.split()
         if key in ("VERSION_CODENAME", "UBUNTU_CODENAME", "DEBIAN_CODENAME"):
             codenames.append(value)
-    old = {"bullseye", "bookworm", "trixie", "focal", "jammy", "noble"}
-    return bool({"debian", "ubuntu"} & set(ids)) and bool(old & set(codenames))
+    fixable = {"trixie", "noble"}
+    unsupported = {"bullseye", "bookworm", "focal", "jammy"}
+    debian = bool({"debian", "ubuntu"} & set(ids))
+    return debian and not (fixable & set(codenames)) and bool(unsupported & set(codenames))
 
 
 def main():
@@ -310,8 +315,9 @@ def main():
         APP = app
         ok("window on the accessibility bus")
 
-        # --- The banner for systems whose p11-kit is too old ---------------
-        if old_p11kit_host():
+        # --- The banner for systems whose p11-kit is too old and cannot be
+        # replaced by Tessera's ----------------------------------------------
+        if unsupported_p11kit_host():
             wait("the old p11-kit banner", lambda: find(app, role="label", name=OLD_P11KIT_BANNER))
             ok("old p11-kit banner shown on this host")
         else:

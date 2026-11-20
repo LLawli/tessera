@@ -230,11 +230,13 @@ fn copy_text_button(win: &Rc<Win>, text: String, tooltip: &str, done: &'static s
     b
 }
 
-/// On systems whose p11-kit is too old for signing (native.rs), a row on
-/// Home that says so, with a button to the README's list of distributions.
-/// It is shown or hidden again in update_service, once the system's server
-/// has told its protocol version. (A banner over the window does not wrap
-/// its text, and made the window as wide as the sentence.)
+/// On systems whose p11-kit is too old for signing and cannot run Tessera's
+/// own (native.rs, HostP11kit::Unsupported), a row on Home that says so,
+/// with a button to the README's list of distributions. It is shown or
+/// hidden again in update_service, once the system's server has told its
+/// protocol version. Where Tessera's p11-kit runs (Fixable), the System
+/// connection row asks for the command instead. (A banner over the window
+/// does not wrap its text, and made the window as wide as the sentence.)
 fn old_p11kit_banner() -> adw::ActionRow {
     let row = plain_row(
         t("On this system signing does not work (old p11-kit); see the project's documentation"),
@@ -242,7 +244,7 @@ fn old_p11kit_banner() -> adw::ActionRow {
         "dialog-error-symbolic",
     );
     row.add_css_class("error");
-    row.set_visible(crate::native::host_has_old_p11kit(None));
+    row.set_visible(crate::native::host_p11kit(None) == crate::native::HostP11kit::Unsupported);
     row
 }
 
@@ -284,8 +286,9 @@ pub(super) fn update_service(hub: &Hub, win: &Win) {
         State::Failed(msg) => (format!("{}: {msg}", t("The server exited")), t("Start"), true),
     };
     win.service_row.set_subtitle(&subtitle);
+    let p11kit = crate::native::host_p11kit(hub.host_protocol.get());
     win.old_p11kit
-        .set_visible(crate::native::host_has_old_p11kit(hub.host_protocol.get()));
+        .set_visible(p11kit == crate::native::HostP11kit::Unsupported);
     win.service_button.set_label(button);
     win.service_bad.set(!matches!(state, State::Running));
     if warn {
@@ -299,6 +302,17 @@ pub(super) fn update_service(hub: &Hub, win: &Win) {
     );
     let (text, bad) = match (&*hub.host.borrow(), &*hub.host_view.borrow()) {
         (Err(e), _) => (format!("{}: {e}", t("Could not write the host module files")), true),
+        // The system's own server, too old to sign (protocol 1), on a
+        // release where Tessera's p11-kit takes its place: the command does.
+        (Ok(_), Some(status::HostView::Sees(..)))
+            if p11kit == crate::native::HostP11kit::Fixable
+                && hub.host_protocol.get().is_some_and(|v| v < 2) =>
+        {
+            (
+                t("On, but this system's p11-kit is too old to sign. Copy the command with the button on the right and run it once in a terminal.").to_string(),
+                true,
+            )
+        }
         (Ok(_), Some(status::HostView::Sees(n, twice))) if twice.is_empty() => (
             format!("{} · {n} {}", t("On"), t("token(s) of Tessera seen by the apps")),
             false,
@@ -1094,7 +1108,7 @@ pub(super) fn build_window(app: &adw::Application, hub: &Rc<Hub>) -> Rc<Win> {
     });
     connect_old_p11kit_banner(&win);
     win.host_row
-        .add_suffix(&copy_button(&win, apps::host_server_command().to_string()));
+        .add_suffix(&copy_button(&win, apps::host_server_command()));
 
     // The pages.
     let (home, column) = page_column();

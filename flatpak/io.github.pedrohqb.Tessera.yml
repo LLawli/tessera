@@ -217,6 +217,55 @@ modules:
         url: https://github.com/OpenSC/OpenSC/releases/download/0.27.1/opensc-0.27.1.tar.gz
         sha256: 976f4a23eaf3397a1a2c3a7aac80bf971a8c3d829c9a79f06145bfaeeae5eca7
 
+  # p11-kit with upstream PR #786 (p11-glue/p11-kit), for systems whose own
+  # p11-kit is 0.25.5 or older (Debian 13, Ubuntu 24.04 and their
+  # derivatives). Since 0.25.6, p11-kit encodes every mechanism in a new
+  # layout whatever protocol version the two sides agreed on, so an older
+  # p11-kit and a newer one disagree on every signature (history.md, items 38
+  # and 69). The patches pick the layout by the negotiated version, on each
+  # connection, so this p11-kit speaks with any older or newer one.
+  # Two uses, one build:
+  # - libp11-kit.so.0 in /app/lib, ahead of the runtime's, is the library
+  #   `tessera remote` and `tessera shared` serve the drivers with: native
+  #   apps on those systems (whose p11-kit-proxy.so talks to Tessera itself)
+  #   sign.
+  # - /app/lib/tessera/p11-kit (the p11-kit command, its two helpers and
+  #   the library, found through $ORIGIN) runs on the host, from Flatpak's
+  #   own deployment, as the user's p11-kit server on those systems, in
+  #   place of the system's (apps.rs, HUB_COMMAND): the Flatpak apps, whose
+  #   runtimes have a newer p11-kit, sign through it. Built against the
+  #   runtime's glibc, it needs glibc 2.38 on the host (Debian 13 has 2.41,
+  #   Ubuntu 24.04 2.39).
+  # The configuration paths are the Debian family's, which are also the
+  # runtime's. No trust module and no libffi: the host's trust module is
+  # used, and the library's fixed closures are enough for a server.
+  # meson install would put p11-kit-client.so in the SDK's read-only /usr,
+  # so the files are installed by hand.
+  - name: p11-kit
+    buildsystem: simple
+    build-commands:
+      - >-
+        LDFLAGS='-Wl,-rpath,$ORIGIN' meson setup _build --prefix=/app --libdir=lib
+        --buildtype=release -Dsysconfdir=/etc -Dsystem_config=/etc/pkcs11
+        -Dmodule_config=/usr/share/p11-kit/modules
+        -Dmodule_path=/usr/lib/x86_64-linux-gnu/pkcs11 -Dtrust_module=disabled
+        -Dlibffi=disabled -Dsystemd=disabled -Dbash_completion=disabled
+        -Dzsh_completion=disabled -Dgtk_doc=false -Dman=false -Dnls=false
+        -Dtest=false
+      - ninja -C _build
+      - install -Dm755 -t /app/lib/tessera/p11-kit _build/p11-kit/p11-kit _build/p11-kit/p11-kit-server
+        _build/p11-kit/p11-kit-remote
+      - install -Dm755 "$(readlink -f _build/p11-kit/libp11-kit.so.0)" /app/lib/tessera/p11-kit/libp11-kit.so.0
+      - ln -s tessera/p11-kit/libp11-kit.so.0 /app/lib/libp11-kit.so.0
+    sources:
+      - type: archive
+        url: https://github.com/p11-glue/p11-kit/releases/download/0.26.6/p11-kit-0.26.6.tar.xz
+        sha256: 5fda95dc89964af32dbd8e01b139c166717cf96c4fee3d601bcd60bdb23d23c6
+      - type: patch
+        paths:
+          - patches/p11-kit-0001-rpc-mechanism-encoding-by-protocol-version.patch
+          - patches/p11-kit-0002-rpc-formerly-parameterless-mechanisms.patch
+
   - name: tessera
     buildsystem: simple
     build-options:

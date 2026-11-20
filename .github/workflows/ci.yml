@@ -100,6 +100,26 @@ jobs:
             exit $status
           fi
 
+  p11kit:
+    # Tessera's p11-kit (the manifest's p11-kit module) against the old
+    # p11-kit of the systems it is for: signing through the native apps'
+    # path, the Flatpak apps' path with it as the user's server, and an older
+    # app's (tests/p11kit-compat/run.sh; docs/history.md item 69).
+    name: Tessera's p11-kit on ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Debian 13
+            image: debian:trixie
+          - name: Ubuntu 24.04
+            image: ubuntu:24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/p11kit-compat/run.sh
+
   flatpak:
     name: Flatpak bundle
     runs-on: ubuntu-24.04
@@ -130,6 +150,19 @@ jobs:
             echo "::error title=flatpak-builder failed::$msg"
             exit $status
           fi
+      - name: Tessera's p11-kit is in the build and runs on Debian 13 and Ubuntu 24.04
+        run: |
+          d=build-dir/files/lib/tessera/p11-kit
+          for f in p11-kit p11-kit-server p11-kit-remote libp11-kit.so.0; do
+            test -s "$d/$f" || { echo "::error::$d/$f missing"; exit 1; }
+          done
+          test "$(readlink build-dir/files/lib/libp11-kit.so.0)" = tessera/p11-kit/libp11-kit.so.0 \
+            || { echo "::error::/app/lib/libp11-kit.so.0 does not point at Tessera's p11-kit"; exit 1; }
+          # It runs on the host, against the host's glibc: Ubuntu 24.04 has 2.39.
+          max=$(objdump -T "$d/p11-kit" "$d/libp11-kit.so.0" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+          echo "highest glibc symbol: $max"
+          test "$(printf '%s\nGLIBC_2.39\n' "$max" | sort -V | tail -1)" = GLIBC_2.39 \
+            || { echo "::error::Tessera's p11-kit needs $max, newer than Ubuntu 24.04's glibc"; exit 1; }
       - name: Build the driver and web signer extensions
         run: |
           # flatpak-builder needs the parent app installed, as the

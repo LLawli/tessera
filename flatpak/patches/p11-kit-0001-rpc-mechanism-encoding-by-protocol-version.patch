@@ -1,0 +1,512 @@
+From 26f5acdf17e3c300d2ed11cb0cc2e5dfbe7fbf68 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Rikard=20S=C3=B6derstr=C3=B6m?=
+ <Rikard.Soderstrom@permobil.com>
+Date: Tue, 6 Oct 2026 11:07:20 +0200
+Subject: [PATCH 1/2] rpc: Keep mechanism encoding compatible with protocol
+ versions 0 and 1
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Commit 6449cfe ("Rework rpc_C_DeriveKey to allow size queries", first
+released in 0.25.6) changed how CK_MECHANISM is encoded on the wire:
+mechanisms without parameters are no longer followed by an empty byte
+array, and mechanisms with parameters gained a leading "has parameter"
+byte. The change was applied unconditionally, while the RPC protocol
+version range still accepts peers at versions 0 and 1, which use the old
+encoding. A server >= 0.25.6 therefore misparses every request carrying
+a mechanism from an older client, and an older server misparses them
+from a newer client. Calls without a mechanism keep working, so the
+failure only shows when signing, encrypting or similar: for C_SignInit
+the key handle is read from the wrong offset and the call fails with
+CKR_KEY_HANDLE_INVALID (e.g. a 0.24.1 client against a 0.26.x server).
+
+Messages now carry the negotiated protocol version. The client encodes,
+and the server decodes, mechanisms with the old format when the
+negotiated version is below 2 (p11_rpc_buffer_{add,get}_mechanism_v1),
+and with the current format otherwise. p11_kit_remote_serve_module()
+passes its negotiated version through the new
+p11_rpc_server_handle_version(); p11_rpc_server_handle() keeps using the
+maximum version.
+
+Tests cover decoding of a byte-exact version 1 C_SignInit request for
+mechanisms with and without parameters, and signing over RPC with both
+sides at protocol version 1.
+
+Related: https://github.com/p11-glue/p11-kit/issues/733
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Signed-off-by: Rikard Söderström <Rikard.Soderstrom@permobil.com>
+---
+ p11-kit/rpc-client.c       |  6 ++-
+ p11-kit/rpc-mechanism.c    | 78 +++++++++++++++++++++++++++++++
+ p11-kit/rpc-mechanism.h    |  7 +++
+ p11-kit/rpc-message.c      |  1 +
+ p11-kit/rpc-message.h      |  1 +
+ p11-kit/rpc-server.c       | 34 ++++++++++++--
+ p11-kit/rpc.h              |  5 ++
+ p11-kit/test-rpc-message.c | 95 ++++++++++++++++++++++++++++++++++++++
+ p11-kit/test-rpc.c         | 40 +++++++++++++++-
+ 9 files changed, 260 insertions(+), 7 deletions(-)
+
+diff --git a/p11-kit/rpc-client.c b/p11-kit/rpc-client.c
+index 15e757c1..7237c7f1 100644
+--- a/p11-kit/rpc-client.c
++++ b/p11-kit/rpc-client.c
+@@ -101,6 +101,7 @@ call_prepare (rpc_client *module,
+ 
+ 	/* We use the same buffer for reading and writing */
+ 	p11_rpc_message_init (msg, buffer, buffer);
++	msg->version = module->version;
+ 
+ 	/* Put in the Call ID and signature */
+ 	if (!p11_rpc_message_prep (msg, call_id, P11_RPC_REQUEST))
+@@ -455,7 +456,10 @@ proto_write_mechanism (p11_rpc_message *msg,
+ 	 * pointing to garbage if they don't think it's going to be used.
+ 	 */
+ 
+-	p11_rpc_buffer_add_mechanism (msg->output, mech);
++	if (msg->version < 2)
++		p11_rpc_buffer_add_mechanism_v1 (msg->output, mech);
++	else
++		p11_rpc_buffer_add_mechanism (msg->output, mech);
+ 
+ 	return p11_buffer_failed (msg->output) ? CKR_HOST_MEMORY : CKR_OK;
+ }
+diff --git a/p11-kit/rpc-mechanism.c b/p11-kit/rpc-mechanism.c
+index 52db0d45..6ab6d852 100644
+--- a/p11-kit/rpc-mechanism.c
++++ b/p11-kit/rpc-mechanism.c
+@@ -3424,6 +3424,84 @@ p11_rpc_buffer_get_mechanism (p11_buffer *buffer,
+ 	return true;
+ }
+ 
++/*
++ * Mechanism encoding used by RPC protocol versions 0 and 1 (p11-kit up to
++ * 0.25.5): no "has parameter" byte, and mechanisms without parameters are
++ * followed by an empty byte array.  Peers that negotiated a version below 2
++ * still expect this format.
++ */
++void
++p11_rpc_buffer_add_mechanism_v1 (p11_buffer *buffer, const CK_MECHANISM *mech)
++{
++	p11_rpc_mechanism_serializer *serializer = NULL;
++	size_t i;
++
++	/* The mechanism type */
++	p11_rpc_buffer_add_uint32 (buffer, mech->mechanism);
++
++	if (mechanism_has_no_parameters (mech->mechanism)) {
++		p11_rpc_buffer_add_byte_array (buffer, NULL, 0);
++		return;
++	}
++
++	assert (mechanism_has_sane_parameters (mech->mechanism));
++
++	for (i = 0; i < ELEMS (p11_rpc_mechanism_serializers); i++) {
++		if (p11_rpc_mechanism_serializers[i].type == mech->mechanism) {
++			serializer = &p11_rpc_mechanism_serializers[i];
++			break;
++		}
++	}
++
++	if (serializer == NULL)
++		serializer = &p11_rpc_byte_array_mechanism_serializer;
++
++	serializer->encode (buffer, mech->pParameter, mech->ulParameterLen);
++}
++
++bool
++p11_rpc_buffer_get_mechanism_v1 (p11_buffer *buffer,
++				 size_t *offset,
++				 CK_MECHANISM *mech)
++{
++	uint32_t mechanism;
++	p11_rpc_mechanism_serializer *serializer = NULL;
++	size_t i;
++
++	/* The mechanism type */
++	if (!p11_rpc_buffer_get_uint32 (buffer, offset, &mechanism))
++		return false;
++
++	mech->mechanism = mechanism;
++
++	/*
++	 * The NULL mechanism is used for C_*Init () functions to
++	 * cancel operation.  We use a special value 0xffffffff as a
++	 * marker to indicate that.
++	 */
++	if (mechanism == 0xffffffff) {
++		mech->ulParameterLen = 0;
++		mech->pParameter = NULL;
++		return true;
++	}
++
++	for (i = 0; i < ELEMS (p11_rpc_mechanism_serializers); i++) {
++		if (p11_rpc_mechanism_serializers[i].type == mech->mechanism) {
++			serializer = &p11_rpc_mechanism_serializers[i];
++			break;
++		}
++	}
++
++	if (serializer == NULL)
++		serializer = &p11_rpc_byte_array_mechanism_serializer;
++
++	if (!serializer->decode (buffer, offset,
++				 mech->pParameter, &mech->ulParameterLen))
++		return false;
++
++	return true;
++}
++
+ void
+ p11_rpc_buffer_add_mech_param_update (p11_buffer *buffer, const CK_MECHANISM *mech,
+ 				      bool length_only)
+diff --git a/p11-kit/rpc-mechanism.h b/p11-kit/rpc-mechanism.h
+index da630668..8e974b48 100644
+--- a/p11-kit/rpc-mechanism.h
++++ b/p11-kit/rpc-mechanism.h
+@@ -47,6 +47,13 @@ bool             p11_rpc_buffer_get_mechanism            (p11_buffer *buffer,
+ 							  size_t *offset,
+ 							  CK_MECHANISM *mech);
+ 
++void             p11_rpc_buffer_add_mechanism_v1         (p11_buffer *buffer,
++							  const CK_MECHANISM *mech);
++
++bool             p11_rpc_buffer_get_mechanism_v1         (p11_buffer *buffer,
++							  size_t *offset,
++							  CK_MECHANISM *mech);
++
+ void             p11_rpc_buffer_add_mech_param_update            (p11_buffer *buffer,
+ 							  const CK_MECHANISM *mech,
+ 							  bool length_only);
+diff --git a/p11-kit/rpc-message.c b/p11-kit/rpc-message.c
+index 8a6ea594..3b7b1285 100644
+--- a/p11-kit/rpc-message.c
++++ b/p11-kit/rpc-message.c
+@@ -69,6 +69,7 @@ p11_rpc_message_init (p11_rpc_message *msg,
+ 
+ 	msg->output = output;
+ 	msg->input = input;
++	msg->version = P11_RPC_PROTOCOL_VERSION_MAXIMUM;
+ }
+ 
+ void
+diff --git a/p11-kit/rpc-message.h b/p11-kit/rpc-message.h
+index be11b1fc..3dadb983 100644
+--- a/p11-kit/rpc-message.h
++++ b/p11-kit/rpc-message.h
+@@ -322,6 +322,7 @@ typedef struct {
+ 	size_t parsed;
+ 	const char *sigverify;
+ 	void *extra;
++	uint8_t version;
+ } p11_rpc_message;
+ 
+ typedef void (*p11_rpc_value_encoder) (p11_buffer *, const void *, CK_ULONG);
+diff --git a/p11-kit/rpc-server.c b/p11-kit/rpc-server.c
+index dd2aee77..e2ab6729 100644
+--- a/p11-kit/rpc-server.c
++++ b/p11-kit/rpc-server.c
+@@ -456,6 +456,17 @@ proto_read_space_string (p11_rpc_message *msg,
+ 	return CKR_OK;
+ }
+ 
++static bool
++get_mechanism_for_version (p11_rpc_message *msg,
++                           size_t *offset,
++                           CK_MECHANISM *mech)
++{
++	/* Mechanism encoding changed with protocol version 2 */
++	if (msg->version < 2)
++		return p11_rpc_buffer_get_mechanism_v1 (msg->input, offset, mech);
++	return p11_rpc_buffer_get_mechanism (msg->input, offset, mech);
++}
++
+ static CK_RV
+ proto_read_mechanism (p11_rpc_message *msg,
+                       CK_MECHANISM_PTR *mech)
+@@ -473,7 +484,7 @@ proto_read_mechanism (p11_rpc_message *msg,
+ 	/* Check the length needed to store the parameter */
+ 	memset (&temp, 0, sizeof (temp));
+ 	offset = msg->parsed;
+-	if (!p11_rpc_buffer_get_mechanism (msg->input, &offset, &temp)) {
++	if (!get_mechanism_for_version (msg, &offset, &temp)) {
+ 		msg->parsed = offset;
+ 		return PARSE_ERROR;
+ 	}
+@@ -501,7 +512,7 @@ proto_read_mechanism (p11_rpc_message *msg,
+ 
+ 	/* Actually retrieve the parameter */
+ 	(*mech)->pParameter = p11_rpc_message_alloc_extra (msg, temp.ulParameterLen);
+-	if (!p11_rpc_buffer_get_mechanism (msg->input, &msg->parsed, *mech))
++	if (!get_mechanism_for_version (msg, &msg->parsed, *mech))
+ 		return PARSE_ERROR;
+ 
+ 	assert (msg->parsed == offset);
+@@ -2614,6 +2625,7 @@ rpc_C_UnwrapKeyAuthenticated (CK_X_FUNCTION_LIST *self,
+ 
+ static bool
+ rpc_server_handle (CK_X_FUNCTION_LIST *self,
++                   uint8_t version,
+                    p11_buffer *request,
+                    p11_buffer *response)
+ {
+@@ -2624,6 +2636,7 @@ rpc_server_handle (CK_X_FUNCTION_LIST *self,
+ 	p11_message_clear ();
+ 
+ 	p11_rpc_message_init (&msg, request, response);
++	msg.version = version;
+ 
+ 	if (!p11_rpc_message_parse (&msg, P11_RPC_REQUEST)) {
+ 		p11_rpc_message_clear (&msg);
+@@ -2793,6 +2806,16 @@ bool
+ p11_rpc_server_handle (CK_X_FUNCTION_LIST *self,
+                        p11_buffer *request,
+                        p11_buffer *response)
++{
++	return p11_rpc_server_handle_version (self, P11_RPC_PROTOCOL_VERSION_MAXIMUM,
++	                                      request, response);
++}
++
++bool
++p11_rpc_server_handle_version (CK_X_FUNCTION_LIST *self,
++                               uint8_t version,
++                               p11_buffer *request,
++                               p11_buffer *response)
+ {
+ 	p11_buffer scratch;
+ 	bool ret;
+@@ -2802,11 +2825,11 @@ p11_rpc_server_handle (CK_X_FUNCTION_LIST *self,
+ 	return_val_if_fail (response != NULL, false);
+ 
+ 	if (request != response)
+-		return rpc_server_handle (self, request, response);
++		return rpc_server_handle (self, version, request, response);
+ 
+ 	p11_buffer_init (&scratch, 0);
+ 
+-	ret = rpc_server_handle (self, request, &scratch);
++	ret = rpc_server_handle (self, version, request, &scratch);
+ 	if (ret) {
+ 		p11_buffer_reset (response, 0);
+ 		if (scratch.len > 0)
+@@ -2902,7 +2925,8 @@ p11_kit_remote_serve_module (CK_FUNCTION_LIST *module,
+ 			goto out;
+ 		}
+ 
+-		if (!p11_rpc_server_handle (&server.virt.funcs, &buffer, &response)) {
++		if (!p11_rpc_server_handle_version (&server.virt.funcs, server.version,
++		                                    &buffer, &response)) {
+ 			p11_message (_("unexpected error handling rpc message"));
+ 			goto out;
+ 		}
+diff --git a/p11-kit/rpc.h b/p11-kit/rpc.h
+index 9bfe279c..9c5fc722 100644
+--- a/p11-kit/rpc.h
++++ b/p11-kit/rpc.h
+@@ -67,6 +67,11 @@ bool                   p11_rpc_server_handle       (CK_X_FUNCTION_LIST *funcs,
+                                                     p11_buffer *request,
+                                                     p11_buffer *response);
+ 
++bool                   p11_rpc_server_handle_version (CK_X_FUNCTION_LIST *funcs,
++                                                      uint8_t version,
++                                                      p11_buffer *request,
++                                                      p11_buffer *response);
++
+ extern CK_MECHANISM_TYPE *  p11_rpc_mechanisms_override_supported;
+ 
+ typedef struct _p11_rpc_transport p11_rpc_transport;
+diff --git a/p11-kit/test-rpc-message.c b/p11-kit/test-rpc-message.c
+index 2db7cb57..3f7984ab 100644
+--- a/p11-kit/test-rpc-message.c
++++ b/p11-kit/test-rpc-message.c
+@@ -1505,6 +1505,100 @@ test_ibm_btc_derive_roundtrip (void)
+ 	teardown_mock_module (module);
+ }
+ 
++/*
++ * Peers that negotiated protocol version 0 or 1 (p11-kit <= 0.25.5) encode
++ * a C_SignInit request as: mechanism type, the parameter encoding (an empty
++ * byte array for mechanisms without parameters, no "has parameter" byte),
++ * then the key handle.  Decoding must leave the key handle intact.
++ */
++static void
++test_mechanism_v1_wire_format (void)
++{
++	p11_buffer wire;
++	p11_buffer encoded;
++	CK_MECHANISM_TYPE *mechanisms;
++	CK_RSA_PKCS_PSS_PARAMS pss = { CKM_SHA256, CKG_MGF1_SHA256, 32 };
++	CK_MECHANISM rsa_pkcs = { CKM_RSA_PKCS, NULL, 0 };
++	CK_MECHANISM rsa_pss = { CKM_RSA_PKCS_PSS, &pss, sizeof (pss) };
++	CK_RSA_PKCS_PSS_PARAMS *decoded;
++	CK_MECHANISM val;
++	uint64_t handle;
++	size_t offset, offset2;
++	bool ret;
++
++	mechanisms = p11_rpc_mechanisms_override_supported;
++	p11_rpc_mechanisms_override_supported = NULL;
++
++	/* Mechanism without parameters, as sent by an old peer */
++	p11_buffer_init (&wire, 0);
++	p11_rpc_buffer_add_uint32 (&wire, CKM_RSA_PKCS);
++	p11_rpc_buffer_add_byte_array (&wire, NULL, 0);
++	p11_rpc_buffer_add_uint64 (&wire, 0x12345678);
++	assert (!p11_buffer_failed (&wire));
++
++	p11_buffer_init (&encoded, 0);
++	p11_rpc_buffer_add_mechanism_v1 (&encoded, &rsa_pkcs);
++	p11_rpc_buffer_add_uint64 (&encoded, 0x12345678);
++	assert_num_eq (wire.len, encoded.len);
++	assert (memcmp (wire.data, encoded.data, wire.len) == 0);
++	p11_buffer_uninit (&encoded);
++
++	offset = 0;
++	memset (&val, 0, sizeof (val));
++	ret = p11_rpc_buffer_get_mechanism_v1 (&wire, &offset, &val);
++	assert_num_eq (true, ret);
++	assert_num_eq (CKM_RSA_PKCS, val.mechanism);
++	assert_num_eq (0, val.ulParameterLen);
++	ret = p11_rpc_buffer_get_uint64 (&wire, &offset, &handle);
++	assert_num_eq (true, ret);
++	assert_num_eq (0x12345678, handle);
++	assert_num_eq (wire.len, offset);
++	p11_buffer_uninit (&wire);
++
++	/* Mechanism with parameters, as sent by an old peer */
++	p11_buffer_init (&wire, 0);
++	p11_rpc_buffer_add_uint32 (&wire, CKM_RSA_PKCS_PSS);
++	p11_rpc_buffer_add_rsa_pkcs_pss_mechanism_value (&wire, &pss, sizeof (pss));
++	p11_rpc_buffer_add_uint64 (&wire, 0x12345678);
++	assert (!p11_buffer_failed (&wire));
++
++	p11_buffer_init (&encoded, 0);
++	p11_rpc_buffer_add_mechanism_v1 (&encoded, &rsa_pss);
++	p11_rpc_buffer_add_uint64 (&encoded, 0x12345678);
++	assert_num_eq (wire.len, encoded.len);
++	assert (memcmp (wire.data, encoded.data, wire.len) == 0);
++	p11_buffer_uninit (&encoded);
++
++	/* First pass only reports the length of the parameter */
++	offset = 0;
++	offset2 = offset;
++	memset (&val, 0, sizeof (val));
++	ret = p11_rpc_buffer_get_mechanism_v1 (&wire, &offset, &val);
++	assert_num_eq (true, ret);
++	assert_num_eq (CKM_RSA_PKCS_PSS, val.mechanism);
++	assert_num_eq (sizeof (CK_RSA_PKCS_PSS_PARAMS), val.ulParameterLen);
++
++	val.pParameter = malloc (val.ulParameterLen);
++	assert_ptr_not_null (val.pParameter);
++
++	offset = offset2;
++	ret = p11_rpc_buffer_get_mechanism_v1 (&wire, &offset, &val);
++	assert_num_eq (true, ret);
++	decoded = val.pParameter;
++	assert_num_eq (CKM_SHA256, decoded->hashAlg);
++	assert_num_eq (CKG_MGF1_SHA256, decoded->mgf);
++	assert_num_eq (32, decoded->sLen);
++	free (val.pParameter);
++
++	ret = p11_rpc_buffer_get_uint64 (&wire, &offset, &handle);
++	assert_num_eq (true, ret);
++	assert_num_eq (0x12345678, handle);
++	assert_num_eq (wire.len, offset);
++	p11_buffer_uninit (&wire);
++
++	p11_rpc_mechanisms_override_supported = mechanisms;
++}
++
+ /* Mechanisms taking an optional CK_SIGN_ADDITIONAL_CONTEXT parameter,
+  * as defined by PKCS#11 3.2 sections 6.67.5, 6.67.7, 6.68.5 and 6.68.7 */
+ static CK_MECHANISM_TYPE sign_additional_context_mechs[] = {
+@@ -1744,6 +1838,7 @@ main (int argc,
+ 	p11_test (test_ibm_kyber_mech_param_update, "/rpc-message/ibm-kyber-mech-param-update");
+ 	p11_test (test_ibm_btc_derive_mech_param_update, "/rpc-message/ibm-btc-derive-mech-param-update");
+ 	p11_test (test_ibm_btc_derive_roundtrip, "/rpc-message/ibm-btc-derive-roundtrip");
++	p11_test (test_mechanism_v1_wire_format, "/rpc-message/mechanism-v1-wire-format");
+ 	p11_test (test_sign_additional_context_mechanism, "/rpc-message/sign-additional-context-mechanism");
+ 	p11_test (test_hash_sign_additional_context_mechanism, "/rpc-message/hash-sign-additional-context-mechanism");
+ 	p11_test (test_message_write, "/rpc-message/message-write");
+diff --git a/p11-kit/test-rpc.c b/p11-kit/test-rpc.c
+index dc054138..ecd99677 100644
+--- a/p11-kit/test-rpc.c
++++ b/p11-kit/test-rpc.c
+@@ -62,6 +62,7 @@
+ 
+ static p11_virtual base;
+ static unsigned int rpc_initialized = 0;
++static uint8_t rpc_version = P11_RPC_PROTOCOL_VERSION_MAXIMUM;
+ 
+ static CK_RV
+ rpc_initialize (p11_rpc_client_vtable *vtable,
+@@ -81,6 +82,9 @@ rpc_authenticate (p11_rpc_client_vtable *vtable,
+ 	assert_str_eq (vtable->data, "vtable-data");
+ 	assert_ptr_not_null (version);
+ 
++	if (*version > rpc_version)
++		*version = rpc_version;
++
+ 	return CKR_OK;
+ }
+ 
+@@ -112,7 +116,7 @@ rpc_transport (p11_rpc_client_vtable *vtable,
+ 	assert_str_eq (vtable->data, "vtable-data");
+ 
+ 	/* Just pass directly to the server code */
+-	ret = p11_rpc_server_handle (&base.funcs, request, response);
++	ret = p11_rpc_server_handle_version (&base.funcs, rpc_version, request, response);
+ 	assert (ret == true);
+ 
+ 	return CKR_OK;
+@@ -549,6 +553,39 @@ teardown_mock_module (CK_FUNCTION_LIST *rpc_module)
+ 	p11_virtual_unwrap (rpc_module);
+ }
+ 
++/* Client and server negotiate protocol version 1, as with p11-kit <= 0.25.5 */
++static void
++test_sign_protocol_v1 (void)
++{
++	CK_FUNCTION_LIST *module;
++	CK_SESSION_HANDLE session = 0;
++	CK_MECHANISM mech = { CKM_MOCK_PREFIX, "prefix:", 7 };
++	CK_BYTE signature[128];
++	CK_ULONG length;
++	CK_RV rv;
++
++	rpc_version = 1;
++	module = setup_mock_module (&session);
++
++	rv = (module->C_Login) (session, CKU_USER, (CK_BYTE_PTR)"booo", 4);
++	assert_num_eq (rv, CKR_OK);
++
++	rv = (module->C_SignInit) (session, &mech, MOCK_PRIVATE_KEY_PREFIX);
++	assert_num_eq (rv, CKR_OK);
++
++	rv = (module->C_Login) (session, CKU_CONTEXT_SPECIFIC, (CK_BYTE_PTR)"booo", 4);
++	assert_num_eq (rv, CKR_OK);
++
++	length = sizeof (signature);
++	rv = (module->C_Sign) (session, (CK_BYTE_PTR)"BLAh", 4, signature, &length);
++	assert_num_eq (rv, CKR_OK);
++	assert_num_eq (13, length);
++	assert (memcmp (signature, "prefix:value4", 13) == 0);
++
++	teardown_mock_module (module);
++	rpc_version = P11_RPC_PROTOCOL_VERSION_MAXIMUM;
++}
++
+ static void
+ test_get_info_stand_in (void *module)
+ {
+@@ -1020,6 +1057,7 @@ main (int argc,
+ 	p11_testx (test_mechanism_unsupported, &mock_module_v3, "/rpc3/mechanism-unsupported");
+ 	p11_testx (test_recursion_limit, &mock_module_v3, "/rpc3/recursion-limit");
+ 	p11_testx (test_async_function_name, &mock_module_v3, "/rpc3/async-function-name");
++	p11_test (test_sign_protocol_v1, "/rpc3/sign-protocol-v1");
+ 
+ #ifdef OS_UNIX
+ 	p11_testx (test_fork_and_reinitialize, &mock_module_v3_no_slots, "/rpc3/fork-and-reinitialize");
+

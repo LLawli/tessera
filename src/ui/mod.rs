@@ -55,7 +55,7 @@ struct Hub {
     /// checked again after 5 s.
     host_misses: Cell<u32>,
     /// The protocol version of the system's p11-kit server, read when it
-    /// was last seen serving Tessera's tokens (native.rs, host_has_old_p11kit).
+    /// was last seen serving Tessera's tokens (native.rs, host_p11kit).
     pub(super) host_protocol: Cell<Option<u8>>,
     /// The readers pcscd listed at the last check of the drivers that need
     /// a one-time setup (setup.rs; supervise.rs, gate).

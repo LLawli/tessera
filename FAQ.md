@@ -99,13 +99,16 @@ Se não for mais usar os pacotes do fornecedor, pode também desinstalá-los do 
 
 Quase sempre é a versão do p11-kit do sistema. Com a 0.25.5 ou anterior, o Tessera mostra os tokens e o PIN é pedido, mas toda assinatura falha (no navegador, `SSL_ERROR_HANDSHAKE_FAILED`). Na versão 0.25.6, o p11-kit mudou a forma de transmitir os parâmetros da assinatura, e as versões anteriores não se entendem com o Tessera nesse ponto. Listar os tokens e pedir o PIN não usam esses parâmetros; por isso essa parte funciona.
 
-Isso afeta o Debian 12 e 13, o LMDE 6 e 7, o Ubuntu 24.04 e o Linux Mint 22. Na família Debian, a versão aparece em `dpkg -l libp11-kit0`. Nesses sistemas, use o [distrobox-adv-br](https://github.com/pedrohqb/distrobox-adv-br). No MX Linux, o p11-kit do repositório de teste (MX Package Installer → MX Test Repo) resolve.
+Isso afeta o Debian 12 e 13, o LMDE 6 e 7, o MX Linux 25, o Ubuntu 24.04 e o Linux Mint 22. Na família Debian, a versão aparece em `dpkg -l libp11-kit0`.
+
+- **Debian 13, LMDE 7, MX Linux 25, Ubuntu 24.04 e Linux Mint 22:** o Tessera traz um p11-kit corrigido, que conversa com as versões antigas e com as novas. Ele serve os drivers com esse p11-kit, o que já resolve os aplicativos nativos, e o servidor p11-kit do usuário passa a ser esse mesmo p11-kit, o que resolve os aplicativos em Flatpak. Rode uma vez o comando da linha **Conexão com o sistema**, na página **Sistema** (ou o do [README](README.md#debian-13-e-ubuntu-2404-o-servidor-com-o-p11-kit-do-tessera)).
+- **Debian 12 e LMDE 6:** a biblioteca C desses sistemas é antiga demais para o p11-kit do Tessera. Use o [distrobox-adv-br](https://github.com/pedrohqb/distrobox-adv-br).
 
 **GD Burti do modelo mais antigo** (StarSign Crypto USB Token): até novembro de 2026, a extensão SafeSign mostrava o certificado, aceitava o PIN e falhava em toda assinatura (no PJeOffice, `CKR_DEVICE_ERROR`), porque o SafeSign não achava um de seus arquivos dentro do Tessera. O modelo mais novo (StarSign CUT S) não era afetado. Está corrigido na extensão: rode `flatpak update` e, no menu do Tessera, **Reiniciar o Tessera**.
 
 #### A página Início diz que a assinatura não funciona neste sistema.
 
-O Tessera identificou um p11-kit antigo demais no sistema. Veja a [pergunta sobre a assinatura que falha](#o-pin-é-pedido-mas-a-assinatura-falha-por-quê).
+O Tessera identificou um p11-kit antigo demais no sistema, num sistema que não roda o p11-kit do próprio Tessera (Debian 12, LMDE 6). Veja a [pergunta sobre a assinatura que falha](#o-pin-é-pedido-mas-a-assinatura-falha-por-quê). No Debian 13 e no Ubuntu 24.04, quem avisa é a linha **Conexão com o sistema**, com o comando que resolve.
 
 #### O token não aparece no Tessera.
 
@@ -329,13 +332,16 @@ If you will not use the vendor packages anymore, you can also uninstall them fro
 
 Almost always, it is the system's p11-kit version. With 0.25.5 or older, Tessera shows the tokens and the PIN is asked, but every signature fails (in the browser, `SSL_ERROR_HANDSHAKE_FAILED`). In 0.25.6, p11-kit changed how it sends the signing parameters, and older versions do not understand Tessera on that point. Listing tokens and asking for the PIN do not use those parameters, which is why that part works.
 
-This affects Debian 12 and 13, LMDE 6 and 7, Ubuntu 24.04 and Linux Mint 22. On the Debian family, `dpkg -l libp11-kit0` shows the version. On those systems, use [distrobox-adv-br](https://github.com/pedrohqb/distrobox-adv-br). On MX Linux, the p11-kit from the test repository (MX Package Installer → MX Test Repo) solves it.
+This affects Debian 12 and 13, LMDE 6 and 7, MX Linux 25, Ubuntu 24.04 and Linux Mint 22. On the Debian family, `dpkg -l libp11-kit0` shows the version.
+
+- **Debian 13, LMDE 7, MX Linux 25, Ubuntu 24.04 and Linux Mint 22:** Tessera brings a fixed p11-kit, which talks to old and new versions alike. It serves the drivers with that p11-kit, which already mends the native apps, and the user's p11-kit server becomes that same p11-kit, which mends the Flatpak apps. Run once the command of the **System connection** row, on the **System** page (or the one in the [README](README.md#debian-13-and-ubuntu-2404-the-server-with-tesseras-p11-kit)).
+- **Debian 12 and LMDE 6:** their C library is too old for Tessera's p11-kit. Use [distrobox-adv-br](https://github.com/pedrohqb/distrobox-adv-br).
 
 **The older GD Burti model** (StarSign Crypto USB Token): until November 2026, the SafeSign extension showed the certificate, took the PIN and failed every signature (in PJeOffice, `CKR_DEVICE_ERROR`), because SafeSign could not find one of its files inside Tessera. The newer model (StarSign CUT S) was not affected. It is fixed in the extension: run `flatpak update` and, in Tessera's menu, **Restart Tessera**.
 
 #### The Home page says signing does not work on this system.
 
-Tessera found a p11-kit too old on the system. See the [question on failing signatures](#the-pin-is-asked-but-signing-fails-why).
+Tessera found a p11-kit too old on the system, on a system that does not run Tessera's own p11-kit (Debian 12, LMDE 6). See the [question on failing signatures](#the-pin-is-asked-but-signing-fails-why). On Debian 13 and Ubuntu 24.04, the **System connection** row says so instead, with the command that solves it.
 
 #### The token does not appear in Tessera.
 

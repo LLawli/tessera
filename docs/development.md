@@ -33,7 +33,8 @@ src/
                 ~/.var/app/io.github.pedrohqb.Tessera/config/tessera/settings.toml
   i18n.rs       translation table for Brazilian Portuguese
 flatpak/
-  io.github.pedrohqb.Tessera.yml   the manifest (permissions, pcsc-lite, OpenSC, extension points)
+  io.github.pedrohqb.Tessera.yml   the manifest (permissions, pcsc-lite, OpenSC, p11-kit, extension points)
+  patches/                         upstream p11-kit PR #786, for systems with p11-kit 0.25
   fallback-icons.sh                Adwaita icons for desktops whose theme lacks them (Plasma)
   drivers/opensc/                  the built-in driver: driver.toml and OpenSC's configurations
   extensions/<Name>/               each vendor driver's extension: manifest (extra-data),
@@ -44,6 +45,7 @@ data/          .desktop, metainfo, icons (normal and symbolic), screenshot;
 scripts/       pin-drivers.py, install-test-repo.sh, sign-test.py
 tests/fake-driver/   fake PKCS#11 drivers: one keeps the mechanism pointer,
                      another (slow-slot-list.c) never answers in time
+tests/p11kit-compat/ Tessera's p11-kit against an old system p11-kit (CI)
 tools/         spy.c (LD_PRELOAD spy), gui-test/ (the window in Xvfb)
 docs/          this documentation
 ```
@@ -70,7 +72,7 @@ flatpak-builder --user --force-clean --install --default-branch=stable \
   build-ext flatpak/extensions/SafeSign/io.github.pedrohqb.Tessera.Driver.SafeSign.yml
 ```
 
-The manifest uses the `org.gnome.Platform` 51 runtime, Rust from the `rust-stable` extension, and builds pcsc-lite 2.5.3 (only the client library, `--libdir=lib`), because the runtime does not have it. The pcsc-lite protocol is compatible with the system's `pcscd`.
+The manifest uses the `org.gnome.Platform` 51 runtime, Rust from the `rust-stable` extension, and builds pcsc-lite 2.5.3 (only the client library, `--libdir=lib`), because the runtime does not have it. The pcsc-lite protocol is compatible with the system's `pcscd`. It also builds p11-kit 0.26.6 with the two commits of upstream PR #786 (`flatpak/patches/p11-kit-*.patch`), installed by hand into `/app/lib/tessera/p11-kit`, with `/app/lib/libp11-kit.so.0` pointing at its library ([Architecture](architecture.md#tesseras-own-p11-kit)). When updating it: the release tarball's sha256 in the manifest, the patches (drop them once p11-kit releases the fix), then `tests/p11kit-compat/run.sh`.
 
 ## The test build
 
@@ -126,6 +128,7 @@ To test outside Flatpak, use a regular user: as root, p11-kit ignores the user c
 - **By hand, the full path with SoftHSM:** start a `p11-kit-server` with `P11_KIT_PRIVATEDIR` pointing to a `p11-kit-remote` that runs `target/debug/tessera remote "$@"`, and sign with `scripts/sign-test.py` through `p11-kit-client.so` and `P11_KIT_SERVER_ADDRESS`. With the environment variable `PIN=1234`, the script logs in to SoftHSM.
 - **By hand, the SerproID defect:** `gcc -shared -fPIC -o libfake.so tests/fake-driver/keeps-mechanism-pointer.c` and use it as `--provider`. Through the original `p11-kit-remote`, the server log shows `fake: C_Sign sees … hash=<garbage> -> WRONG`; through `tessera remote`, `hash=0x250 … -> OK`.
 - **On each distribution (CI only):** `cargo test --bin tessera -- --ignored detection_matches_this_system`, in containers of Fedora, Debian, Ubuntu, Arch and openSUSE with their default packages: the p11-kit path Tessera writes for PJeOffice exists; a fresh NSS database, made with `certutil`, is called ready by Tessera exactly when NSS (`modutil -list`) loads a p11-kit module; which Tessera, inside a Flatpak, can only deduce from the distribution's `os-release`. Its findings go into an annotation per distribution. This is how the Fedora case was found (a fresh database there lists nothing, yet NSS loads p11-kit-proxy through crypto-policies), and that openSUSE ships the same crypto-policies file but its NSS does not load it.
+- **Tessera's p11-kit against an old one (`tests/p11kit-compat/run.sh`, CI only):** in a Debian 13 or Ubuntu 24.04 container, as root, it builds the manifest's p11-kit release twice, plain and with `flatpak/patches`, serves a SoftHSM token the way Tessera serves a driver, and signs (RSA-PSS with `sign-test.py`, RSA-PKCS with `pkcs11-tool`) through the system's `p11-kit-proxy.so`, through Tessera's p11-kit as the user's server with the plain release's client (a Flatpak app) and with the system's (an older app), and expects the plain release on Tessera's side to fail the native path. By hand: `docker run --rm -v "$PWD":/repo:ro -w /repo ubuntu:24.04 bash tests/p11kit-compat/run.sh`.
 - **The window, automatically (`tests/gui/test_window.py`):** opens Tessera on a made-up home folder and drives it through the accessibility tree (AT-SPI), as a screen reader would: the Native tab's Set up for Firefox (p11-kit-proxy.so in the profile, row Ready), Okular and Papers (no button, "Set up Firefox first", then Ready with Firefox), PJeOffice Pro (`list.a3` with this distribution's path, the other settings kept), a USB driver held back with its one-time setup row shown (`TESSERA_TEST_READERS`), and the Flatpak tab's step 2 for Firefox (p11-kit-client.so in the Flatpak's profile). An expander row offers no AT-SPI action, so the test reaches it with Tab and opens it with Space (`xdotool`). Run it with `xvfb-run -a dbus-run-session -- python3 tests/gui/test_window.py` after `cargo build`; it needs `at-spi2-core python3-pyatspi xvfb xdotool libnss3-tools`. `TESSERA_GUI_DUMP=1` prints the accessibility tree on a failure, `TESSERA_GUI_KEEP=1` keeps the home folder and Tessera's log.
 - **The window, by hand:** `tools/gui-test/run.sh` opens Tessera in an Xvfb with its own D-Bus session, a test SoftHSM driver and a fake tray (`fake-watcher.py`, which records the icon and the menu). From there, with `. /tmp/tessera-gui/env.sh`, `xdotool` clicks and `import -window root` takes the screenshot. This is how the buttons, Restart, the switches, closing and reopening, the tray and Quit were tested. The driver `tests/fake-driver/slow-slot-list.c` (a `C_GetSlotList` that takes 12 s), compiled and placed in a folder with a `driver.toml` in `TESSERA_DRIVERS_PATH`, tests the three attempts.
 
@@ -135,8 +138,9 @@ To test outside Flatpak, use a regular user: as root, p11-kit ignores the user c
 
 1. **Detection on each distribution:** the containers above.
 2. **Build and test:** `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, then the window test (`tests/gui/test_window.py` in an Xvfb, with the end of its output in an annotation if it fails). Clippy also checks that every `unsafe` block and `unsafe fn` carries its `// SAFETY:` or `# Safety` note (the `[lints.clippy]` table in `Cargo.toml`).
-3. **Flatpak bundle:** `pin-drivers.py`, `flatpak-builder` (with the last lines of the log in an annotation, if it fails), then each extension (drivers and web signers) built, installed from the build's repository, so its `apply_extra.sh` runs on the real download, and its files checked, `flatpak build-update-repo`, and the artifacts `tessera-repo.tar.gz` (test repository with `install-test-repo.sh`) and `tessera-x86_64.tar.gz` (the whole `/app` tree, for anyone who wants to package it as extra-data).
-4. **With a `vX.Y.Z` tag:** creates the release on GitHub with both files.
+3. **Tessera's p11-kit:** `tests/p11kit-compat/run.sh` in Debian 13 and Ubuntu 24.04 containers.
+4. **Flatpak bundle:** `pin-drivers.py`, `flatpak-builder` (with the last lines of the log in an annotation, if it fails), a check that Tessera's p11-kit is in the build, that `/app/lib/libp11-kit.so.0` points at it and that it needs no glibc newer than Ubuntu 24.04's 2.39, then each extension (drivers and web signers) built, installed from the build's repository, so its `apply_extra.sh` runs on the real download, and its files checked, `flatpak build-update-repo`, and the artifacts `tessera-repo.tar.gz` (test repository with `install-test-repo.sh`) and `tessera-x86_64.tar.gz` (the whole `/app` tree, for anyone who wants to package it as extra-data).
+5. **With a `vX.Y.Z` tag:** creates the release on GitHub with both files.
 
 ## Publishing a release
 

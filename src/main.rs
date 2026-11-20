@@ -190,10 +190,17 @@ fn print_status() -> ExitCode {
     if let Some(v) = protocol {
         println!("System p11-kit RPC protocol: {v} (1 means p11-kit 0.25.5 or older)");
     }
-    if native::host_has_old_p11kit(protocol) {
-        println!(
+    match native::host_p11kit(protocol) {
+        native::HostP11kit::Fine => {}
+        // Server off: the OFF line above already gives the command.
+        native::HostP11kit::Fixable if protocol.is_none() => {}
+        native::HostP11kit::Fixable => println!(
+            "WARNING: this system's p11-kit is too old to sign; run once, to serve with Tessera's p11-kit instead: {}",
+            apps::host_server_command()
+        ),
+        native::HostP11kit::Unsupported => println!(
             "WARNING: on this system signing does not work (old p11-kit); see the project's documentation: https://github.com/pedrohqb/tessera#distributions"
-        );
+        ),
     }
     print_signers();
     ExitCode::SUCCESS

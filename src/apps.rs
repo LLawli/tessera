@@ -253,13 +253,106 @@ pub fn app_profiles(app: &ClientApp) -> Vec<std::path::PathBuf> {
 /// The one-time host command that starts the host's p11-kit server.
 const SOCKET_COMMAND: &str = "systemctl --user enable --now p11-kit-server.socket";
 
-/// The same on Debian and its derivatives (Ubuntu, Mint), which ship the
-/// server (`p11-kit server`) but no systemd units for it, and build it
-/// without socket activation: a plain user service, started at login, that
-/// creates the socket itself where the other distributions' socket unit
-/// puts it. Written by printf, one argument per line, so that systemd's `%t`
-/// (the runtime folder) reaches the file as it is.
-const DEBIAN_COMMAND: &str = concat!(
+/// Debian and its derivatives (Ubuntu, Mint) ship the server (`p11-kit
+/// server`) but no systemd units for it, so the command writes user units,
+/// upstream's own (p11-kit/p11-kit-server.{socket,service}): a socket unit at
+/// the path the other distributions use, and the service it starts. p11-kit
+/// takes the socket from systemd since 0.25.6, without libsystemd (the
+/// Debian family builds it without). Each line goes through printf, so that
+/// systemd's `%t` (the runtime folder) reaches the files as it is.
+///
+/// Why a socket unit: Flatpak binds the socket file itself into each sandbox
+/// when an app starts, so a server that makes its own socket left every app
+/// opened before its restart with a dead one; the socket unit keeps the same
+/// socket across the server's restarts. No `-n` on the command line, unlike
+/// upstream's unit: p11-kit removes the file of that name when it stops,
+/// even a socket systemd made, which left the socket unit listening on a
+/// file no longer there after the first restart (seen on Ubuntu 24.04 and
+/// 26.04). Without it, the name is one of its own (pkcs11-<pid>), never made
+/// when systemd hands it the socket.
+///
+/// The server running until now (a plain service, from LEGACY_COMMAND or an
+/// older Tessera) is stopped first, and the socket made anew once: Tessera,
+/// opened before, still holds the old one, so the command ends by opening it
+/// again (nothing happens if it is not installed yet). The apps opened
+/// before need reopening too, as after any first set-up.
+fn socket_units_command(description: &str, env: Option<&str>, p11kit: &str) -> String {
+    let lines = |ls: &[String]| -> String {
+        ls.iter()
+            .map(|l| format!("'{}'", l.replace('\'', r"'\''")))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let socket = lines(&[
+        "[Unit]".into(),
+        format!("Description={description}"),
+        "[Socket]".into(),
+        "Priority=6".into(),
+        "Backlog=5".into(),
+        "ListenStream=%t/p11-kit/pkcs11".into(),
+        "SocketMode=0600".into(),
+        "[Install]".into(),
+        "WantedBy=sockets.target".into(),
+    ]);
+    let mut service = vec![
+        "[Unit]".to_string(),
+        format!("Description={description}"),
+        "Documentation=man:p11-kit(8)".into(),
+        "Requires=p11-kit-server.socket".into(),
+        "[Service]".into(),
+        "Type=simple".into(),
+    ];
+    if let Some(env) = env {
+        service.push(format!("Environment={env}"));
+    }
+    service.extend([
+        format!("ExecStart={p11kit} server -f pkcs11:"),
+        "Restart=on-failure".into(),
+        "[Install]".into(),
+        "Also=p11-kit-server.socket".into(),
+        "WantedBy=default.target".into(),
+    ]);
+    let service = lines(&service);
+    let app = paths::APP_ID;
+    format!(
+        "mkdir -p ~/.config/systemd/user && cd ~/.config/systemd/user && \
+         printf '%s\\n' {socket} > p11-kit-server.socket && \
+         printf '%s\\n' {service} > p11-kit-server.service && \
+         systemctl --user daemon-reload && \
+         {{ systemctl --user stop p11-kit-server.service; true; }} && \
+         systemctl --user enable p11-kit-server.service && \
+         systemctl --user start p11-kit-server.socket p11-kit-server.service && \
+         {{ flatpak kill {app} 2>/dev/null; (setsid flatpak run {app} >/dev/null 2>&1 &); }}"
+    )
+}
+
+/// The Debian family with p11-kit 0.25.6 or newer (Ubuntu 26.04, Debian
+/// testing): the system's own server, through socket_units_command.
+fn debian_command() -> String {
+    socket_units_command("p11-kit server", None, "/usr/bin/p11-kit")
+}
+
+/// The Debian releases whose p11-kit is 0.25.5 or older and can run
+/// Tessera's (native.rs, HostP11kit::Fixable): the same units, running
+/// Tessera's p11-kit from Flatpak's deployment of Tessera on the host (`dir`,
+/// see tessera_p11kit_dir) in place of the system's. It serves the same
+/// configuration (the system's modules, its trust and Tessera's drivers) at
+/// the same path, and speaks with the Flatpak apps' newer p11-kit as well as
+/// with older ones. P11_KIT_PRIVATEDIR is where the command finds its two
+/// helpers.
+fn hub_command(dir: &str) -> String {
+    socket_units_command(
+        "p11-kit server (Tessera's p11-kit)",
+        Some(&format!("P11_KIT_PRIVATEDIR={dir}")),
+        &format!("{dir}/p11-kit"),
+    )
+}
+
+/// A p11-kit of 0.25.5 or older without Tessera's at hand (Debian 12, Ubuntu
+/// 22.04, or Tessera run outside Flatpak): it takes no socket from systemd,
+/// so a plain user service, started at login, that makes the socket itself.
+/// Signing does not work there anyway; the tokens and certificates do.
+const LEGACY_COMMAND: &str = concat!(
     "mkdir -p ~/.config/systemd/user && printf '%s\\n' ",
     "'[Unit]' 'Description=p11-kit server' 'Documentation=man:p11-kit(8)' ",
     "'[Service]' 'ExecStartPre=/bin/mkdir -p -m 700 %t/p11-kit' ",
@@ -270,16 +363,65 @@ const DEBIAN_COMMAND: &str = concat!(
     "systemctl --user enable --now p11-kit-server.service"
 );
 
-/// The command for this host (see SOCKET_COMMAND and DEBIAN_COMMAND).
-pub fn host_server_command() -> &'static str {
-    server_command_for(crate::native::host_is_debian_family())
+/// Where Tessera's own p11-kit (the manifest's p11-kit module) is on the
+/// host. Inside the sandbox it is lib/tessera/p11-kit next to the running
+/// tessera's bin/: /app/lib/tessera/p11-kit in Tessera's own build,
+/// /app/extra/tessera/lib/tessera/p11-kit in FlatPark's package, which
+/// unpacks that build under /app/extra/tessera. On the host, /app is the
+/// deployment's files/ folder, taken through its `active` link so the path
+/// stays right across updates: from /.flatpak-info's app-path
+/// (…/<arch>/<branch>/<commit>/files). None outside Flatpak, when the files
+/// are missing, or when the path has a character the unit file or the shell
+/// would read otherwise.
+pub fn tessera_p11kit_dir() -> Option<String> {
+    let info = fs::read_to_string("/.flatpak-info").ok()?;
+    let app_path = info.lines().find_map(|l| l.strip_prefix("app-path="))?;
+    let exe = std::env::current_exe().ok()?;
+    let inside = exe.parent()?.parent()?.join("lib/tessera/p11-kit");
+    if !inside.join("p11-kit").exists() {
+        return None;
+    }
+    p11kit_dir_from(app_path, &inside)
 }
 
-fn server_command_for(debian: bool) -> &'static str {
-    if debian {
-        DEBIAN_COMMAND
+fn p11kit_dir_from(app_path: &str, inside: &std::path::Path) -> Option<String> {
+    let files = std::path::Path::new(app_path.trim());
+    if files.file_name()? != "files" {
+        return None;
+    }
+    let below_app = inside.strip_prefix("/app").ok()?;
+    let branch = files.parent()?.parent()?;
+    let dir = branch.join("active/files").join(below_app);
+    let dir = dir.to_str()?.to_string();
+    let safe = dir.starts_with('/')
+        && dir
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/._-+".contains(c));
+    safe.then_some(dir)
+}
+
+/// The command for this host (see SOCKET_COMMAND, debian_command,
+/// hub_command and LEGACY_COMMAND), by the release (native.rs, host_p11kit):
+/// what the user's server should be does not change with what answers now.
+pub fn host_server_command() -> String {
+    if !crate::native::host_is_debian_family() {
+        return SOCKET_COMMAND.to_string();
+    }
+    let p11kit = crate::native::host_p11kit(None);
+    let hub = if p11kit == crate::native::HostP11kit::Fixable {
+        tessera_p11kit_dir()
     } else {
-        SOCKET_COMMAND
+        None
+    };
+    debian_command_for(p11kit, hub.as_deref())
+}
+
+fn debian_command_for(p11kit: crate::native::HostP11kit, hub: Option<&str>) -> String {
+    use crate::native::HostP11kit::*;
+    match (p11kit, hub) {
+        (Fine, _) => debian_command(),
+        (Fixable, Some(dir)) => hub_command(dir),
+        (Fixable, None) | (Unsupported, _) => LEGACY_COMMAND.to_string(),
     }
 }
 
@@ -484,18 +626,102 @@ mod tests {
 
     #[test]
     fn server_command_by_distribution() {
-        assert_eq!(server_command_for(false), SOCKET_COMMAND);
-        assert_eq!(server_command_for(true), DEBIAN_COMMAND);
+        use crate::native::HostP11kit::*;
+        assert_eq!(debian_command_for(Fine, None), debian_command());
+        assert_eq!(debian_command_for(Fine, Some("/x")), debian_command());
+        assert_eq!(debian_command_for(Fixable, Some("/x")), hub_command("/x"));
+        assert_eq!(debian_command_for(Fixable, None), LEGACY_COMMAND);
+        assert_eq!(debian_command_for(Unsupported, Some("/x")), LEGACY_COMMAND);
     }
 
-    /// The Debian command writes the unit systemd expects, with `%t` intact
-    /// (the systemctl part is left out: there is no user systemd here).
     #[test]
-    fn debian_command_writes_the_service() {
-        let home = std::env::temp_dir().join(format!("tessera-unit-{}", std::process::id()));
+    fn tessera_p11kit_dir_from_the_app_path() {
+        let id = "io.github.pedrohqb.Tessera";
+        let own = std::path::Path::new("/app/lib/tessera/p11-kit");
+        let flatpark = std::path::Path::new("/app/extra/tessera/lib/tessera/p11-kit");
+        assert_eq!(
+            p11kit_dir_from(
+                &format!("/var/lib/flatpak/app/{id}/x86_64/stable/0a1b2c/files"),
+                own
+            ),
+            Some(format!(
+                "/var/lib/flatpak/app/{id}/x86_64/stable/active/files/lib/tessera/p11-kit"
+            ))
+        );
+        assert_eq!(
+            p11kit_dir_from(
+                &format!("/home/ana/.local/share/flatpak/app/{id}/x86_64/stable/ff/files\n"),
+                flatpark
+            ),
+            Some(format!(
+                "/home/ana/.local/share/flatpak/app/{id}/x86_64/stable/active/files/extra/tessera/lib/tessera/p11-kit"
+            ))
+        );
+        // Not under /app (a build run outside Flatpak).
+        assert_eq!(
+            p11kit_dir_from(
+                &format!("/var/lib/flatpak/app/{id}/x86_64/stable/c/files"),
+                std::path::Path::new("/usr/lib/tessera/p11-kit")
+            ),
+            None
+        );
+        // Characters systemd or the shell would read (a space, `%`, a quote).
+        for bad in [
+            "/home/ana maria/.local/share/flatpak/app/x/x86_64/stable/c/files",
+            "/home/100%/.local/share/flatpak/app/x/x86_64/stable/c/files",
+            "/home/o'neil/.local/share/flatpak/app/x/x86_64/stable/c/files",
+            "/var/lib/flatpak/app/x/x86_64/stable/c",
+            "",
+        ] {
+            assert_eq!(p11kit_dir_from(bad, own), None, "{bad}");
+        }
+    }
+
+    /// The hub command writes upstream's two units, running Tessera's
+    /// p11-kit, with `%t` intact and the helpers' folder in the service's
+    /// environment (the systemctl part is left out: there is no user
+    /// systemd here).
+    #[test]
+    fn hub_command_writes_the_units() {
+        let dir = "/var/lib/flatpak/app/io.github.pedrohqb.Tessera/x86_64/stable/active/files/lib/tessera/p11-kit";
+        let cmd = hub_command(dir);
+        let home = write_units(&cmd, "hub-units");
+        let units = home.join(".config/systemd/user");
+        assert_eq!(
+            fs::read_to_string(units.join("p11-kit-server.socket")).unwrap(),
+            "[Unit]\nDescription=p11-kit server (Tessera's p11-kit)\n\
+             [Socket]\nPriority=6\nBacklog=5\nListenStream=%t/p11-kit/pkcs11\nSocketMode=0600\n\
+             [Install]\nWantedBy=sockets.target\n"
+        );
+        assert_eq!(
+            fs::read_to_string(units.join("p11-kit-server.service")).unwrap(),
+            format!(
+                "[Unit]\nDescription=p11-kit server (Tessera's p11-kit)\nDocumentation=man:p11-kit(8)\n\
+                 Requires=p11-kit-server.socket\n\
+                 [Service]\nType=simple\nEnvironment=P11_KIT_PRIVATEDIR={dir}\n\
+                 ExecStart={dir}/p11-kit server -f pkcs11:\nRestart=on-failure\n\
+                 [Install]\nAlso=p11-kit-server.socket\nWantedBy=default.target\n"
+            )
+        );
+        // The running server is replaced before the socket is made, and
+        // Tessera opens again on the new socket.
+        let stop = cmd.find("stop p11-kit-server.service").unwrap();
+        let start = cmd.find("start p11-kit-server.socket").unwrap();
+        assert!(stop < start);
+        assert!(cmd.ends_with(
+            "{ flatpak kill io.github.pedrohqb.Tessera 2>/dev/null; (setsid flatpak run io.github.pedrohqb.Tessera >/dev/null 2>&1 &); }"
+        ));
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    /// Runs the part of a command that writes the units (the systemctl part
+    /// is left out: there is no user systemd here), in a made-up home, and
+    /// returns the folder.
+    fn write_units(cmd: &str, name: &str) -> std::path::PathBuf {
+        let home = std::env::temp_dir().join(format!("tessera-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&home);
         fs::create_dir_all(&home).unwrap();
-        let write = DEBIAN_COMMAND.split(" && systemctl").next().unwrap();
+        let write = cmd.split(" && systemctl").next().unwrap();
         let ok = std::process::Command::new("sh")
             .arg("-c")
             .arg(write)
@@ -504,6 +730,40 @@ mod tests {
             .unwrap()
             .success();
         assert!(ok);
+        home
+    }
+
+    /// Ubuntu 26.04's command: upstream's units, running the system's
+    /// p11-kit, without `-n`.
+    #[test]
+    fn debian_command_writes_the_units() {
+        let cmd = debian_command();
+        let home = write_units(&cmd, "debian-units");
+        let units = home.join(".config/systemd/user");
+        assert_eq!(
+            fs::read_to_string(units.join("p11-kit-server.socket")).unwrap(),
+            "[Unit]\nDescription=p11-kit server\n\
+             [Socket]\nPriority=6\nBacklog=5\nListenStream=%t/p11-kit/pkcs11\nSocketMode=0600\n\
+             [Install]\nWantedBy=sockets.target\n"
+        );
+        assert_eq!(
+            fs::read_to_string(units.join("p11-kit-server.service")).unwrap(),
+            "[Unit]\nDescription=p11-kit server\nDocumentation=man:p11-kit(8)\n\
+             Requires=p11-kit-server.socket\n\
+             [Service]\nType=simple\n\
+             ExecStart=/usr/bin/p11-kit server -f pkcs11:\nRestart=on-failure\n\
+             [Install]\nAlso=p11-kit-server.socket\nWantedBy=default.target\n"
+        );
+        let stop = cmd.find("stop p11-kit-server.service").unwrap();
+        let start = cmd.find("start p11-kit-server.socket").unwrap();
+        assert!(stop < start);
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    /// The plain service, for a p11-kit that takes no socket from systemd.
+    #[test]
+    fn legacy_command_writes_the_service() {
+        let home = write_units(LEGACY_COMMAND, "legacy-unit");
         let unit =
             fs::read_to_string(home.join(".config/systemd/user/p11-kit-server.service")).unwrap();
         assert_eq!(

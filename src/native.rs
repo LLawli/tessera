@@ -260,43 +260,83 @@ pub fn host_is_debian_family() -> bool {
     debian_family(&host_os_release())
 }
 
-/// Releases of the Debian family whose p11-kit is older than 0.25.6
-/// (Debian 11 to 13, Ubuntu 20.04 to 24.04, and what is built on them: MX,
-/// LMDE, Linux Mint, Pop!_OS…). From 0.25.6 on, p11-kit sends a mechanism's
-/// parameters in another layout, not tied to the protocol version, so an
-/// older system p11-kit and Tessera's disagree: tokens and the PIN work,
-/// every signature with parameters (RSA-PSS, TLS 1.3) fails (history.md
-/// item 38). By codename, which derivatives keep in UBUNTU_CODENAME or
-/// DEBIAN_CODENAME: a Flatpak cannot ask the host's p11-kit its version.
-const OLD_P11KIT_CODENAMES: [&str; 6] =
-    ["bullseye", "bookworm", "trixie", "focal", "jammy", "noble"];
-
-/// Is the host's p11-kit too old for signing through Tessera? `protocol` is
-/// what the system's p11-kit server answered (status::host_protocol), when
-/// it is known to be that server: the version it speaks decides. Without it
-/// (the server is off), the release codename.
-pub fn host_has_old_p11kit(protocol: Option<u8>) -> bool {
-    old_p11kit(protocol, || old_p11kit_by_release(&host_os_release()))
+/// What the host's p11-kit means for signing through Tessera.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostP11kit {
+    /// 0.25.6 or newer (or not the Debian family): nothing to do.
+    Fine,
+    /// 0.25.5 or older, on a release where Tessera's own p11-kit runs as
+    /// the user's p11-kit server instead (apps.rs, the hub command).
+    Fixable,
+    /// 0.25.5 or older, on a release where Tessera's p11-kit does not run
+    /// (its glibc is older than 2.38): not supported.
+    Unsupported,
 }
 
-fn old_p11kit(protocol: Option<u8>, by_release: impl FnOnce() -> bool) -> bool {
-    match protocol {
-        Some(v) => v < 2,
-        None => by_release(),
+/// Since 0.25.6, p11-kit sends a mechanism's parameters in another layout,
+/// whatever protocol version the two sides agreed on, so an older system
+/// p11-kit and a newer one disagree: tokens and the PIN work, every
+/// signature fails (history.md items 38 and 69). Tessera serves with a
+/// p11-kit that follows the agreed version (the manifest's p11-kit module),
+/// which mends the native apps' path; the Flatpak apps go through the
+/// system's server, so on these releases that server is replaced by the same
+/// p11-kit, run from Tessera's deployment. By codename, which derivatives
+/// keep in UBUNTU_CODENAME or DEBIAN_CODENAME (Mint 22, LMDE 7, MX 25,
+/// Pop!_OS 24.04): a Flatpak cannot ask the host's p11-kit its version.
+/// Debian 13 (glibc 2.41) and Ubuntu 24.04 (2.39) run it.
+const FIXABLE_CODENAMES: [&str; 2] = ["trixie", "noble"];
+/// The older releases, whose glibc (2.36 and older) does not run it.
+const UNSUPPORTED_CODENAMES: [&str; 4] = ["bullseye", "bookworm", "focal", "jammy"];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Release {
+    Fixable,
+    Unsupported,
+    Other,
+}
+
+/// What the host's p11-kit means for signing (HostP11kit). `protocol` is
+/// what the system's p11-kit server answered (status::host_protocol), when
+/// it is known to be that server: 2 is fine whatever the release (MX with
+/// p11-kit 0.26 from its test repository, or the user's server already
+/// replaced by Tessera's p11-kit). Otherwise the release decides.
+pub fn host_p11kit(protocol: Option<u8>) -> HostP11kit {
+    p11kit_state(protocol, release_class(&host_os_release()))
+}
+
+fn p11kit_state(protocol: Option<u8>, release: Release) -> HostP11kit {
+    match (protocol, release) {
+        (Some(v), _) if v >= 2 => HostP11kit::Fine,
+        (_, Release::Fixable) => HostP11kit::Fixable,
+        (_, Release::Unsupported) => HostP11kit::Unsupported,
+        // An old server on a release not known here: nothing says
+        // Tessera's p11-kit would run on it.
+        (Some(_), Release::Other) => HostP11kit::Unsupported,
+        (None, Release::Other) => HostP11kit::Fine,
     }
 }
 
-fn old_p11kit_by_release(os_release: &str) -> bool {
-    debian_family(os_release)
-        && os_release
-            .lines()
-            .filter_map(|l| {
-                ["VERSION_CODENAME=", "UBUNTU_CODENAME=", "DEBIAN_CODENAME="]
-                    .iter()
-                    .find_map(|k| l.trim().strip_prefix(k))
-            })
-            .map(|v| v.trim().trim_matches('"').to_lowercase())
-            .any(|c| OLD_P11KIT_CODENAMES.contains(&c.as_str()))
+fn release_class(os_release: &str) -> Release {
+    if !debian_family(os_release) {
+        return Release::Other;
+    }
+    let codenames: Vec<String> = os_release
+        .lines()
+        .filter_map(|l| {
+            ["VERSION_CODENAME=", "UBUNTU_CODENAME=", "DEBIAN_CODENAME="]
+                .iter()
+                .find_map(|k| l.trim().strip_prefix(k))
+        })
+        .map(|v| v.trim().trim_matches('"').to_lowercase())
+        .collect();
+    let any = |list: &[&str]| codenames.iter().any(|c| list.contains(&c.as_str()));
+    if any(&FIXABLE_CODENAMES) {
+        Release::Fixable
+    } else if any(&UNSUPPORTED_CODENAMES) {
+        Release::Unsupported
+    } else {
+        Release::Other
+    }
 }
 
 fn debian_family(os_release: &str) -> bool {
@@ -868,42 +908,54 @@ mod tests {
 
     #[test]
     fn the_servers_protocol_decides_before_the_codename() {
-        // MX 25 with p11-kit 0.26 from its test repository: trixie, but 2.
-        assert!(!old_p11kit(Some(2), || true));
-        assert!(old_p11kit(Some(1), || false));
-        assert!(old_p11kit(Some(0), || false));
-        assert!(old_p11kit(None, || true));
-        assert!(!old_p11kit(None, || false));
+        use HostP11kit::*;
+        // MX 25 with p11-kit 0.26 from its test repository, or the user's
+        // server already Tessera's p11-kit: trixie, but 2.
+        assert_eq!(p11kit_state(Some(2), Release::Fixable), Fine);
+        assert_eq!(p11kit_state(Some(2), Release::Unsupported), Fine);
+        assert_eq!(p11kit_state(Some(1), Release::Fixable), Fixable);
+        assert_eq!(p11kit_state(None, Release::Fixable), Fixable);
+        assert_eq!(p11kit_state(Some(0), Release::Unsupported), Unsupported);
+        assert_eq!(p11kit_state(None, Release::Unsupported), Unsupported);
+        assert_eq!(p11kit_state(Some(1), Release::Other), Unsupported);
+        assert_eq!(p11kit_state(None, Release::Other), Fine);
     }
 
     #[test]
     fn old_p11kit_by_distribution() {
-        let old = [
+        let fixable = [
             "ID=debian\nVERSION_ID=\"13\"\nVERSION_CODENAME=trixie\n",
-            "ID=debian\nVERSION_ID=\"12\"\nVERSION_CODENAME=bookworm\n",
             // MX keeps Debian's os-release.
             "PRETTY_NAME=\"MX 25\"\nID=debian\nVERSION_CODENAME=trixie\n",
             "ID=linuxmint\nID_LIKE=debian\nVERSION_CODENAME=gigi\nDEBIAN_CODENAME=trixie\n",
-            "ID=linuxmint\nID_LIKE=debian\nVERSION_CODENAME=faye\nDEBIAN_CODENAME=bookworm\n",
             "ID=ubuntu\nID_LIKE=debian\nVERSION_ID=\"24.04\"\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble\n",
-            "ID=ubuntu\nID_LIKE=debian\nVERSION_CODENAME=jammy\nUBUNTU_CODENAME=jammy\n",
             "ID=linuxmint\nID_LIKE=\"ubuntu debian\"\nVERSION_CODENAME=wilma\nUBUNTU_CODENAME=noble\n",
             "ID=pop\nID_LIKE=\"ubuntu debian\"\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble\n",
         ];
-        for r in old {
-            assert!(old_p11kit_by_release(r), "{r}");
+        for r in fixable {
+            assert_eq!(release_class(r), Release::Fixable, "{r}");
         }
-        let fine = [
+        let unsupported = [
+            "ID=debian\nVERSION_ID=\"12\"\nVERSION_CODENAME=bookworm\n",
+            "ID=linuxmint\nID_LIKE=debian\nVERSION_CODENAME=faye\nDEBIAN_CODENAME=bookworm\n",
+            "ID=ubuntu\nID_LIKE=debian\nVERSION_CODENAME=jammy\nUBUNTU_CODENAME=jammy\n",
+        ];
+        for r in unsupported {
+            assert_eq!(release_class(r), Release::Unsupported, "{r}");
+        }
+        let other = [
             "ID=ubuntu\nID_LIKE=debian\nVERSION_ID=\"26.04\"\nVERSION_CODENAME=resolute\nUBUNTU_CODENAME=resolute\n",
             "ID=ubuntu\nID_LIKE=debian\nVERSION_CODENAME=questing\nUBUNTU_CODENAME=questing\n",
             "ID=debian\nVERSION_CODENAME=forky\n",
             "ID=fedora\nVERSION_ID=44\n",
             "ID=cachyos\nID_LIKE=arch\n",
             "ID=opensuse-tumbleweed\nID_LIKE=\"opensuse suse\"\n",
+            // A Fedora that happened to say trixie is not the Debian family.
+            "ID=fedora\nVERSION_CODENAME=trixie\n",
             "",
         ];
-        for r in fine {
-            assert!(!old_p11kit_by_release(r), "{r}");
+        for r in other {
+            assert_eq!(release_class(r), Release::Other, "{r}");
         }
     }
 
