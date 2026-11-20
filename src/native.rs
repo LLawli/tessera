@@ -85,7 +85,12 @@ pub const PJEOFFICE: NativeApp = NativeApp {
 
 pub const THUNDERBIRD: NativeApp = NativeApp {
     name: "Thunderbird",
-    icons: &["thunderbird", "org.mozilla.Thunderbird"],
+    // The Flatpak's ID today, and the one it had before.
+    icons: &[
+        "thunderbird",
+        "org.mozilla.thunderbird",
+        "org.mozilla.Thunderbird",
+    ],
     fallback_icon: "mail-send-symbolic",
     kind: Kind::Thunderbird,
 };

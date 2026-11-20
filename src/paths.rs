@@ -297,29 +297,69 @@ pub fn flatpak_export_icon(app_id: &str) -> Option<PathBuf> {
 /// (Flathub, FlatPark…), which has the icons of every app in the remote,
 /// installed or not: what software centers show.
 pub fn appstream_icon(app_id: &str) -> Option<PathBuf> {
+    appstream_icon_in(
+        &[
+            home().join(".local/share/flatpak/appstream"),
+            PathBuf::from("/var/lib/flatpak/appstream"),
+        ],
+        app_id,
+    )
+}
+
+/// The file is named after the AppStream component, which for some apps is
+/// still the old form of the ID, with `.desktop` at the end (Flathub's
+/// Evolution: `org.gnome.Evolution.desktop.png`).
+fn appstream_icon_in(bases: &[PathBuf], app_id: &str) -> Option<PathBuf> {
     if !app_id.contains('.') {
         return None;
     }
-    for base in [
-        home().join(".local/share/flatpak/appstream"),
-        PathBuf::from("/var/lib/flatpak/appstream"),
-    ] {
-        let Ok(remotes) = std::fs::read_dir(&base) else {
+    for base in bases {
+        let Ok(remotes) = std::fs::read_dir(base) else {
             continue;
         };
         let mut remotes: Vec<PathBuf> = remotes.flatten().map(|e| e.path()).collect();
         remotes.sort();
         for remote in remotes {
             for size in ["128x128", "64x64"] {
-                let icon = remote
-                    .join("x86_64/active/icons")
-                    .join(size)
-                    .join(format!("{app_id}.png"));
-                if icon.is_file() {
-                    return Some(icon);
+                for name in [format!("{app_id}.png"), format!("{app_id}.desktop.png")] {
+                    let icon = remote.join("x86_64/active/icons").join(size).join(name);
+                    if icon.is_file() {
+                        return Some(icon);
+                    }
                 }
             }
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn appstream_icon_with_the_old_desktop_name() {
+        let tmp =
+            std::env::temp_dir().join(format!("tessera-test-appstream-{}", std::process::id()));
+        let icons = tmp.join("flathub/x86_64/active/icons/128x128");
+        std::fs::create_dir_all(&icons).unwrap();
+        std::fs::write(icons.join("org.example.Plain.png"), b"").unwrap();
+        std::fs::write(icons.join("org.example.Old.desktop.png"), b"").unwrap();
+        let bases = [tmp.clone()];
+        let name = |id: &str| {
+            appstream_icon_in(&bases, id)
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        };
+        assert_eq!(
+            name("org.example.Plain").as_deref(),
+            Some("org.example.Plain.png")
+        );
+        assert_eq!(
+            name("org.example.Old").as_deref(),
+            Some("org.example.Old.desktop.png")
+        );
+        assert_eq!(name("org.example.Missing"), None);
+        assert_eq!(name("plain"), None);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
 }
